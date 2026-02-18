@@ -484,7 +484,7 @@ function Home() {
             <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/80 border-b border-gray-200 transition-all duration-200">
                 <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between relative">
                     <div className="flex items-center gap-2 cursor-pointer" onClick={() => setTab("menu")}>
-                        <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-gray-900">A.Luna</h1>
+                        <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Crispy Pata sa A.Luna</h1>
                     </div>
 
                     <nav className="hidden md:flex items-center gap-1 bg-gray-100/50 p-1 rounded-full">

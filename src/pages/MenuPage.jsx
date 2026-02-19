@@ -22,6 +22,9 @@ function MenuPage() {
 
   const [msg, setMsg] = useState({ type: "", text: "" });
 
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+
   const setSuccess = (text) => setMsg({ type: "success", text });
   const setError = (text) => setMsg({ type: "error", text });
 
@@ -57,6 +60,14 @@ function MenuPage() {
     setSuccess(`Added ${qty}x ${item.name} to cart!`);
   };
 
+  const handleCartClick = () => {
+    if (isLoggedIn) {
+      navigate("/home", { state: { openCart: true } });
+    } else {
+      setShowLoginPrompt(true);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
 
@@ -65,20 +76,28 @@ function MenuPage() {
       if (!mounted) return;
 
       const user = data?.session?.user;
-      if (user?.id) navigate("/home", { replace: true });
+      if (user?.id) {
+        setIsLoggedIn(true);
+      } else {
+        setIsLoggedIn(false);
+      }
     };
 
     check();
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user?.id) navigate("/home", { replace: true });
+      if (session?.user?.id) {
+        setIsLoggedIn(true);
+      } else {
+        setIsLoggedIn(false);
+      }
     });
 
     return () => {
       mounted = false;
       listener?.subscription?.unsubscribe();
     };
-  }, [navigate]);
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -122,11 +141,41 @@ function MenuPage() {
       {msg.text && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-5 duration-300">
           <div className={`px-6 py-3 rounded-full shadow-lg flex items-center gap-3 border ${msg.type === "error"
-              ? "bg-red-50 border-red-200 text-red-800"
-              : "bg-black text-white border-black"
+            ? "bg-red-50 border-red-200 text-red-800"
+            : "bg-black text-white border-black"
             }`}>
             <i className={`fa-solid ${msg.type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check text-green-400'}`} />
             <span className="font-semibold text-sm">{msg.text}</span>
+          </div>
+        </div>
+      )}
+
+      {showLoginPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden transform transition-all scale-100">
+            <div className="p-6 text-center">
+              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i className="fa-solid fa-right-to-bracket text-blue-600 text-xl"></i>
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Login Required</h3>
+              <p className="text-gray-500 text-sm mb-6">
+                Please log in or sign up to proceed to checkout and view your cart details.
+              </p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => navigate("/login")}
+                  className="w-full px-5 py-2.5 rounded-full bg-black text-white font-medium hover:bg-gray-800 shadow-md transition cursor-pointer"
+                >
+                  Log In / Sign Up
+                </button>
+                <button
+                  onClick={() => setShowLoginPrompt(false)}
+                  className="w-full px-5 py-2.5 rounded-full border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition cursor-pointer"
+                >
+                  Continue Browsing
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -147,17 +196,19 @@ function MenuPage() {
                   Menu
                 </NavLink>
               </li>
-              <li>
-                <NavLink to="/login" className={navBtnClass}>
-                  Log in / Sign up
-                </NavLink>
-              </li>
+              {!isLoggedIn && (
+                <li>
+                  <NavLink to="/login" className={navBtnClass}>
+                    Log in / Sign up
+                  </NavLink>
+                </li>
+              )}
 
               <li>
                 <button
                   type="button"
-                  onClick={() => setCartOpen(true)}
-                  className="relative px-3 py-1 rounded-full bg-black text-white font-semibold hover:bg-neutral-800 active:scale-95 transition flex flex-row gap-2 items-center"
+                  onClick={handleCartClick}
+                  className="relative px-3 py-1 rounded-full bg-black text-white font-semibold hover:bg-neutral-800 active:scale-95 transition flex flex-row gap-2 items-center cursor-pointer"
                 >
                   <i className="fa-solid fa-cart-shopping" />
                   Cart
@@ -174,8 +225,8 @@ function MenuPage() {
           <div className="md:hidden flex items-center gap-3">
             <button
               type="button"
-              onClick={() => setCartOpen(true)}
-              className="relative p-2.5 rounded-full bg-black text-white hover:bg-neutral-800 active:scale-95 transition flex items-center justify-center"
+              onClick={handleCartClick}
+              className="relative p-2.5 rounded-full bg-black text-white hover:bg-neutral-800 active:scale-95 transition flex items-center justify-center cursor-pointer"
             >
               <i className="fa-solid fa-cart-shopping text-sm" />
               {cartBadgeCount > 0 && (
@@ -249,21 +300,23 @@ function MenuPage() {
                 </NavLink>
               </li>
 
-              <li>
-                <NavLink
-                  to="/login"
-                  onClick={() => setOpen(false)}
-                  className={navBtnClass}
-                >
-                  Log in / Sign up
-                </NavLink>
-              </li>
+              {!isLoggedIn && (
+                <li>
+                  <NavLink
+                    to="/login"
+                    onClick={() => setOpen(false)}
+                    className={navBtnClass}
+                  >
+                    Log in / Sign up
+                  </NavLink>
+                </li>
+              )}
             </ul>
           </nav>
         </div>
       </header>
 
-      <main className="flex min-h-screen flex-col w-full space-y-6 max-w-7xl mx-auto p-4 md:p-6">
+      <main className="flex min-h-screen flex-col w-full space-y-6 max-w-7xl mx-auto p-4">
         <section className="flex flex-col gap-4 w-full">
           <h2 className="text-2xl font-bold">Featured menu</h2>
 
@@ -354,13 +407,23 @@ function MenuPage() {
           )}
         </section>
 
-        <CartModal open={cartOpen} onClose={() => setCartOpen(false)} />
+        <CartModal
+          open={cartOpen}
+          onClose={() => setCartOpen(false)}
+          onCheckoutClick={() => {
+            setCartOpen(false);
+            handleCartClick();
+          }}
+        />
 
         <MenuItemModal
           open={itemOpen}
           onClose={() => setItemOpen(false)}
           item={selectedItem}
-          onAddToCart={handleAddToCart}
+          onAddToCart={(item, qty) => {
+            handleAddToCart(item, qty);
+            setItemOpen(false);
+          }}
         />
       </main>
     </>

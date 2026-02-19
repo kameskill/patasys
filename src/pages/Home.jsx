@@ -659,7 +659,7 @@ function Home() {
                                 {[1, 2, 3, 4].map((i) => (<div key={i} className="bg-white rounded-2xl h-80 animate-pulse border border-gray-100"></div>))}
                             </div>
                         ) : (
-                            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 w-full">
                                 {menu.map((item) => (
                                     <div key={item.id} className="relative group">
                                         <MenuCard

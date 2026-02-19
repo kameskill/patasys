@@ -263,7 +263,7 @@ function MenuPage() {
         </div>
       </header>
 
-      <main className="flex min-h-screen flex-col w-full space-y-6 mt-5 max-w-7xl mx-auto p-4 md:p-6">
+      <main className="flex min-h-screen flex-col w-full space-y-6 max-w-7xl mx-auto p-4 md:p-6">
         <section className="flex flex-col gap-4 w-full">
           <h2 className="text-2xl font-bold">Featured menu</h2>
 
@@ -309,7 +309,7 @@ function MenuPage() {
             </div>
           )}
 
-          <h2 className="text-2xl font-bold mt-8">Menu</h2>
+          <h2 className="text-2xl font-bold">Menu</h2>
 
           {loading ? (
             <div className="text-gray-700">Loading...</div>

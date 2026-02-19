@@ -45,6 +45,8 @@ function Home() {
     const [modalOpen, setModalOpen] = useState(false);
     const [selectedItem, setSelectedItem] = useState(null);
 
+    const [selectedOrder, setSelectedOrder] = useState(null);
+
     const PICKUP_ADDRESS = "124 F.Vergel Concepcion Baliuag Bulacan (Pickup Only)";
 
     const [profile, setProfile] = useState({
@@ -425,8 +427,12 @@ function Home() {
         return <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${classes}`}>{s}</span>;
     };
 
-    const activeOrders = orders.filter(o => ['pending', 'preparing'].includes((o.status || 'pending').toLowerCase()));
-    const historyOrders = orders.filter(o => !['pending', 'preparing'].includes((o.status || '').toLowerCase()));
+    const getItemImage = (item) => {
+        return item.image_url || menuImageMap[item.id];
+    };
+
+    const activeOrders = orders.filter(o => ['pending', 'preparing', 'ready'].includes((o.status || 'pending').toLowerCase()));
+    const historyOrders = orders.filter(o => !['pending', 'preparing', 'ready'].includes((o.status || '').toLowerCase()));
     const displayedOrders = orderTab === 'active' ? activeOrders : historyOrders;
 
     if (!user) {
@@ -494,7 +500,70 @@ function Home() {
                 </div>
             )}
 
-            <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/80 border-b border-gray-200 transition-all duration-200">
+            {selectedOrder && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setSelectedOrder(null)}>
+                    <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 md:p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                            <div>
+                                <h3 className="text-xl font-bold">Order Details</h3>
+                                <p className="text-xs text-gray-500 font-mono">#{selectedOrder.id}</p>
+                            </div>
+                            <button onClick={() => setSelectedOrder(null)} className="h-8 w-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-black hover:bg-gray-50 transition cursor-pointer"><i className="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div className="p-4 md:p-6 space-y-6 overflow-y-auto">
+                            <div className="space-y-3">
+                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Items</h4>
+                                {selectedOrder.items?.map((item, idx) => {
+                                    const imgSrc = getItemImage(item);
+                                    return (
+                                        <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-50 last:border-0">
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-12 w-12 rounded-lg bg-gray-100 border border-gray-200 overflow-hidden shrink-0">
+                                                    {imgSrc ? (
+                                                        <img src={imgSrc} alt={item.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center text-gray-300"><i className="fa-solid fa-utensils text-xs"></i></div>
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="text-gray-900 font-bold leading-tight">{item.name}</span>
+                                                    <span className="text-xs text-gray-500 font-medium">Qty: {item.quantity} × ₱{item.price}</span>
+                                                </div>
+                                            </div>
+                                            <span className="text-gray-900 font-bold whitespace-nowrap">₱{item.price * item.quantity}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-4">
+                                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex flex-col justify-center">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <span className="block text-gray-400 text-[10px] font-bold uppercase tracking-wider">Payment Method</span>
+                                        <span className="font-bold uppercase text-xs text-gray-700">{selectedOrder.payment_method}</span>
+                                    </div>
+                                    <div className="flex justify-between items-end mt-2 pt-2 border-t border-gray-200">
+                                        <span className="text-gray-500 font-medium text-sm">Total Amount</span>
+                                        <span className="font-black text-xl text-black">₱{selectedOrder.total}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {selectedOrder.notes && (
+                                <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-xl text-sm text-yellow-800">
+                                    <span className="font-bold block mb-1 flex items-center gap-2"><i className="fa-regular fa-comment-dots"></i> Special Instructions:</span>
+                                    <p className="italic">{selectedOrder.notes}</p>
+                                </div>
+                            )}
+                        </div>
+                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+                            <button onClick={() => setSelectedOrder(null)} className="px-6 py-2.5 bg-black text-white rounded-full font-medium hover:bg-gray-800 transition cursor-pointer">Close Details</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <header className="bg-white border-b border-gray-200 sticky top-0 z-40 w-full backdrop-blur-md bg-white/80 transition-all duration-200">
                 <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between relative">
                     <div className="flex items-center gap-2 cursor-pointer" onClick={() => setTab("menu")}>
                         <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Crispy Pata sa A.Luna</h1>
@@ -582,7 +651,7 @@ function Home() {
             <main className="max-w-7xl mx-auto p-4 md:p-4">
                 {active === "menu" && (
                     <div className="animate-[fadeIn_0.3s_ease-out]">
-                        <div className="flex flex-col md:flex-row md:items-end justify-between mb-4 gap-4">
+                        <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
                             <div><h2 className="text-3xl font-bold tracking-tight text-gray-900">Menu</h2></div>
                         </div>
                         {loadingMenu ? (
@@ -590,7 +659,7 @@ function Home() {
                                 {[1, 2, 3, 4].map((i) => (<div key={i} className="bg-white rounded-2xl h-80 animate-pulse border border-gray-100"></div>))}
                             </div>
                         ) : (
-                            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 w-full">
+                            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                                 {menu.map((item) => (
                                     <div key={item.id} className="relative group">
                                         <MenuCard
@@ -633,7 +702,7 @@ function Home() {
 
                 {active === "cart" && (
                     <div className="animate-[fadeIn_0.3s_ease-out]">
-                        <h2 className="text-3xl font-bold mb-6">Your Bag</h2>
+                        <h2 className="text-3xl font-bold mb-6">Your Cart</h2>
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                             <div className="lg:col-span-8 space-y-4">
                                 {cart.length === 0 ? (
@@ -737,52 +806,53 @@ function Home() {
                                         {orderTab === 'active' && o.status !== 'cancelled' && (
                                             <div className="px-5 py-4 bg-white border-b border-gray-50">
                                                 <div className="flex items-center justify-between text-xs font-semibold text-gray-400 mb-2">
-                                                    <span className="text-black">Received</span>
-                                                    <span className={o.status === 'preparing' || o.status === 'completed' ? "text-black" : ""}>Preparing</span>
-                                                    <span className={o.status === 'completed' ? "text-black" : ""}>Ready</span>
+                                                    <span className="text-black">Placed order</span>
+                                                    <span className={o.status === 'preparing' || o.status === 'completed' || o.status === 'ready' ? "text-black" : ""}>Preparing</span>
+                                                    <span className={o.status === 'completed' || o.status === 'ready' ? "text-black" : ""}>Ready</span>
                                                 </div>
                                                 <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
-                                                    <div className="bg-black h-full transition-all duration-500 ease-out" style={{ width: o.status === 'pending' ? '33%' : o.status === 'preparing' ? '66%' : o.status === 'completed' || o.status === 'served' ? '100%' : '5%' }}></div>
+                                                    <div className="bg-black h-full transition-all duration-500 ease-out" style={{ width: o.status === 'pending' ? '33%' : o.status === 'preparing' ? '66%' : o.status === 'completed' || o.status === 'ready' ? '100%' : '5%' }}></div>
                                                 </div>
                                             </div>
                                         )}
 
-                                        <div className="p-5 flex-1">
-                                            <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-3">Order Details</p>
-                                            <ul className="space-y-3 mb-4">
-                                                {(o.items || []).slice(0, 3).map((it, idx) => {
-                                                    const img = it.image_url || menuImageMap[it.id];
-                                                    return (
-                                                        <li key={idx} className="flex justify-between items-center text-sm border-b border-gray-50 pb-2 last:border-0 last:pb-0">
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="h-10 w-10 bg-gray-100 rounded-md overflow-hidden shrink-0 border border-gray-200">
-                                                                    {img ? (
-                                                                        <img src={img} alt={it.name} className="w-full h-full object-cover" />
-                                                                    ) : (
-                                                                        <div className="w-full h-full flex items-center justify-center text-gray-400">
-                                                                            <i className="fa-solid fa-utensils text-xs"></i>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <div className="flex flex-col">
-                                                                    <span className="text-gray-900 font-semibold leading-tight">{it.name}</span>
-                                                                    <span className="text-xs text-gray-500">Qty: {it.quantity}</span>
-                                                                </div>
+                                        <div className="p-5 flex-1 flex flex-col justify-between cursor-pointer group" onClick={() => setSelectedOrder(o)}>
+                                            <div className="mb-4">
+                                                <div className="flex justify-between items-end mb-2">
+                                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Items</p>
+                                                </div>
+                                                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                                                    {(o.items || []).slice(0, 4).map((item, idx) => {
+                                                        const imgSrc = getItemImage(item);
+                                                        return (
+                                                            <div key={idx} className="relative w-12 h-12 rounded-lg border border-gray-200 bg-gray-50 shrink-0 overflow-hidden group-hover:border-gray-300 transition-colors">
+                                                                {imgSrc ? (
+                                                                    <img src={imgSrc} alt={item.name} className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <div className="w-full h-full flex items-center justify-center text-gray-300"><i className="fa-solid fa-utensils text-xs"></i></div>
+                                                                )}
+                                                                {item.quantity > 1 && (
+                                                                    <div className="absolute bottom-0 right-0 bg-black/80 text-white text-[9px] px-1.5 py-0.5 rounded-tl-md font-bold">x{item.quantity}</div>
+                                                                )}
                                                             </div>
-                                                            <span className="text-gray-900 font-medium whitespace-nowrap">₱{it.price * it.quantity}</span>
-                                                        </li>
-                                                    );
-                                                })}
-                                                {(o.items || []).length > 3 && <li className="text-xs text-gray-400 italic pt-1 text-center">+ {(o.items || []).length - 3} more items...</li>}
-                                            </ul>
-                                            <div className="text-xs text-gray-500 space-y-1 pt-2 border-t border-gray-100"><div className="flex justify-between"><span>Payment:</span><span className="font-medium uppercase text-gray-700">{o.payment_method}</span></div></div>
-                                        </div>
-                                        {o.status === 'pending' && (
-                                            <div className="p-4 border-t border-gray-100 bg-gray-50">
-                                                <button onClick={() => handleCancelClick(o.id)} disabled={cancellingId === o.id} className="w-full py-2 rounded-lg border border-red-200 text-red-600 font-semibold text-sm hover:bg-red-50 transition active:scale-[0.98] cursor-pointer">{cancellingId === o.id ? "Cancelling..." : "Cancel Order"}</button>
-                                                <p className="text-[10px] text-center text-gray-400 mt-2">You can only cancel before kitchen preparation starts.</p>
+                                                        );
+                                                    })}
+                                                    {(o.items || []).length > 4 && (
+                                                        <div className="w-12 h-12 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-xs font-bold text-gray-600 shrink-0">
+                                                            +{(o.items || []).length - 4}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <p className="text-sm text-gray-600 line-clamp-1 font-medium mt-1">{o.items.map(i => i.name).join(", ")}</p>
                                             </div>
-                                        )}
+                                        </div>
+
+                                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex flex-col gap-2">
+                                            {o.status === 'pending' && (
+                                                <button onClick={() => handleCancelClick(o.id)} disabled={cancellingId === o.id} className="w-full py-2 rounded-lg border border-red-200 text-red-600 font-semibold text-sm hover:bg-red-50 transition active:scale-[0.98] cursor-pointer">{cancellingId === o.id ? "Cancelling..." : "Cancel Order"}</button>
+                                            )}
+                                            <button onClick={() => setSelectedOrder(o)} className="w-full py-2 rounded-lg border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-100 transition active:scale-[0.98] cursor-pointer">View Full Details</button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>

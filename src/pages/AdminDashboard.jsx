@@ -199,7 +199,7 @@ function AdminDashboard() {
             setSuccess(`${item.name} is now ${newVal ? "Available" : "Unavailable"}`);
         } catch (e) {
             console.error(e);
-            setError("Failed to update status. Check permissions.");
+            setError("Failed to update status.");
             fetchMenu();
         }
     };
@@ -285,7 +285,7 @@ function AdminDashboard() {
 
             {confirmModal.open && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden transform transition-all scale-100">
+                    <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
                         <div className="p-6 text-center">
                             <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <i className="fa-solid fa-circle-question text-blue-600 text-xl"></i>
@@ -383,7 +383,7 @@ function AdminDashboard() {
                         </div>
                         <div className="flex items-center gap-2">
                             <button onClick={() => window.location.reload()} className="h-10 w-10 rounded-full bg-gray-50 border border-gray-200 text-gray-500 hover:text-black hover:bg-gray-100 transition flex items-center justify-center cursor-pointer" title="Refresh Page"><i className="fa-solid fa-rotate-right"></i></button>
-                            <button onClick={() => setShowLogoutModal(true)} className="h-10 px-4 rounded-full bg-red-50 text-red-600 font-bold text-sm hover:bg-red-100 transition flex items-center justify-center gap-2 cursor-pointer"><i className="fa-solid fa-arrow-right-from-bracket"></i> <span className="hidden sm:inline">Log Out</span></button>
+                            <button onClick={() => setShowLogoutModal(true)} className="h-10 px-4 rounded-full bg-red-50 text-red-600 font-bold text-sm hover:bg-red-100 transition flex items-center justify-center gap-2 cursor-pointer"><i className="fa-solid fa-arrow-right-from-bracket"></i> <span className="hidden sm:inline">Log out</span></button>
                         </div>
                     </div>
                 </div>
@@ -394,11 +394,8 @@ function AdminDashboard() {
             </header>
 
             {msg.text && (
-                <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4 animate-[fadeIn_0.3s_ease-out]">
-                    <div className={`rounded-xl shadow-lg border p-4 flex items-start gap-3 backdrop-blur-sm ${msg.type === "error" ? "bg-red-50/90 border-red-200 text-red-800" : "bg-green-50/90 border-green-200 text-green-800"}`}>
-                        <i className={`fa-solid ${msg.type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check'} mt-0.5`}></i>
-                        <p className="text-sm font-medium">{msg.text}</p>
-                    </div>
+                <div className="fixed top-20 right-4 z-50 animate-[fadeIn_0.3s_ease-out]">
+                    <div className={`px-4 py-3 rounded-lg shadow-lg text-sm font-semibold text-white ${msg.type === "error" ? "bg-red-600" : "bg-green-600"}`}>{msg.text}</div>
                 </div>
             )}
 
@@ -460,7 +457,14 @@ function AdminDashboard() {
 
                                         <div className="p-5 flex-1 flex flex-col justify-between cursor-pointer group" onClick={() => setSelectedOrder(order)}>
                                             <div className="mb-4">
-                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Items</p>
+                                                <div className="flex justify-between items-end mb-2">
+                                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Items</p>
+                                                    {order.notes && (
+                                                        <span className="text-[10px] bg-yellow-100 text-yellow-800 font-bold px-2 py-0.5 rounded flex items-center gap-1">
+                                                            <i className="fa-solid fa-comment-dots"></i> Has Note
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                                                     {(order.items || []).slice(0, 4).map((item, idx) => {
                                                         const imgSrc = getItemImage(item);
@@ -537,81 +541,79 @@ function AdminDashboard() {
                                 </div>
                             </div>
                         ) : (
-                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm">
-                                <div className="overflow-x-auto w-full">
-                                    <table className="w-full text-left text-sm whitespace-nowrap">
-                                        <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase text-[10px] font-black tracking-widest">
-                                            <tr>
-                                                <th className="px-6 py-4 rounded-tl-2xl">Item Info</th>
-                                                <th className="px-6 py-4">Price</th>
-                                                <th className="px-6 py-4">Status</th>
-                                                <th className="px-6 py-4 text-right rounded-tr-2xl">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-100">
-                                            {menuItems.map((item) => (
-                                                <tr key={item.id} className="hover:bg-gray-50/50 transition">
-                                                    <td className="px-6 py-4">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="h-10 w-10 rounded-lg bg-gray-100 border border-gray-200 overflow-hidden shrink-0">
-                                                                {item.image_url ? (
-                                                                    <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
-                                                                ) : (
-                                                                    <div className="w-full h-full flex items-center justify-center text-gray-300"><i className="fa-solid fa-image text-xs"></i></div>
-                                                                )}
-                                                            </div>
-                                                            <span className="font-bold text-gray-900">{item.name}</span>
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-x-auto w-full">
+                                <table className="w-full text-left text-sm whitespace-nowrap min-w-max">
+                                    <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase text-[10px] font-black tracking-widest">
+                                        <tr>
+                                            <th className="px-6 py-4 rounded-tl-2xl">Item Info</th>
+                                            <th className="px-6 py-4">Price</th>
+                                            <th className="px-6 py-4">Status</th>
+                                            <th className="px-6 py-4 text-right rounded-tr-2xl">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {menuItems.map((item) => (
+                                            <tr key={item.id} className="hover:bg-gray-50/50 transition">
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="h-10 w-10 rounded-lg bg-gray-100 border border-gray-200 overflow-hidden shrink-0">
+                                                            {item.image_url ? (
+                                                                <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center text-gray-300"><i className="fa-solid fa-image text-xs"></i></div>
+                                                            )}
                                                         </div>
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        {editingPriceId === item.id ? (
-                                                            <div className="flex items-center gap-2">
-                                                                <div className="relative">
-                                                                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold">₱</span>
-                                                                    <input
-                                                                        type="number"
-                                                                        autoFocus
-                                                                        className="w-24 pl-6 pr-2 py-1.5 bg-white border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-black focus:border-transparent font-bold text-sm"
-                                                                        value={editPriceValue}
-                                                                        onChange={(e) => setEditPriceValue(e.target.value)}
-                                                                        onKeyDown={(e) => e.key === 'Enter' && handleSavePrice(item)}
-                                                                    />
-                                                                </div>
-                                                                <button onClick={() => handleSavePrice(item)} className="h-8 w-8 bg-black text-white rounded-lg hover:bg-gray-800 transition flex items-center justify-center cursor-pointer shadow-sm" title="Save"><i className="fa-solid fa-check text-xs"></i></button>
-                                                                <button onClick={handleCancelEditPrice} className="h-8 w-8 bg-white border border-gray-200 text-gray-500 rounded-lg hover:bg-gray-50 hover:text-black transition flex items-center justify-center cursor-pointer shadow-sm" title="Cancel"><i className="fa-solid fa-xmark text-xs"></i></button>
+                                                        <span className="font-bold text-gray-900">{item.name}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    {editingPriceId === item.id ? (
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="relative">
+                                                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold">₱</span>
+                                                                <input
+                                                                    type="number"
+                                                                    autoFocus
+                                                                    className="w-24 pl-6 pr-2 py-1.5 bg-white border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-black focus:border-transparent font-bold text-sm"
+                                                                    value={editPriceValue}
+                                                                    onChange={(e) => setEditPriceValue(e.target.value)}
+                                                                    onKeyDown={(e) => e.key === 'Enter' && handleSavePrice(item)}
+                                                                />
                                                             </div>
-                                                        ) : (
-                                                            <div className="flex items-center gap-3 group">
-                                                                <span className="font-black text-gray-900 text-base">₱{fmtMoney(item.price)}</span>
-                                                                <button
-                                                                    onClick={() => handleEditPriceClick(item)}
-                                                                    className="opacity-0 group-hover:opacity-100 h-7 w-7 bg-white border border-gray-200 text-gray-500 hover:text-black hover:border-gray-300 rounded-md transition-all flex items-center justify-center cursor-pointer shadow-sm"
-                                                                    title="Edit Price"
-                                                                >
-                                                                    <i className="fa-solid fa-pen text-[10px]"></i>
-                                                                </button>
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        {item.is_available ?
-                                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-green-50 text-green-700 border border-green-200 uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>Available</span> :
-                                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-red-50 text-red-700 border border-red-200 uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>Sold Out</span>
-                                                        }
-                                                    </td>
-                                                    <td className="px-6 py-4 text-right">
-                                                        <button
-                                                            onClick={() => toggleMenuAvailability(item)}
-                                                            className={`px-4 py-2 rounded-xl text-xs font-bold border transition shadow-sm cursor-pointer ${item.is_available ? "bg-white border-red-200 text-red-600 hover:bg-red-50" : "bg-black border-black text-white hover:bg-gray-800"}`}
-                                                        >
-                                                            {item.is_available ? "Mark Sold Out" : "Restore Item"}
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                                            <button onClick={() => handleSavePrice(item)} className="h-8 w-8 bg-black text-white rounded-lg hover:bg-gray-800 transition flex items-center justify-center cursor-pointer shadow-sm" title="Save"><i className="fa-solid fa-check text-xs"></i></button>
+                                                            <button onClick={handleCancelEditPrice} className="h-8 w-8 bg-white border border-gray-200 text-gray-500 rounded-lg hover:bg-gray-50 hover:text-black transition flex items-center justify-center cursor-pointer shadow-sm" title="Cancel"><i className="fa-solid fa-xmark text-xs"></i></button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-3">
+                                                            <span className="font-black text-gray-900 text-base">₱{fmtMoney(item.price)}</span>
+                                                            <button
+                                                                onClick={() => handleEditPriceClick(item)}
+                                                                className="h-7 w-7 bg-white border border-gray-200 text-gray-500 hover:text-black hover:border-gray-300 rounded-md transition-all flex items-center justify-center cursor-pointer shadow-sm"
+                                                                title="Edit Price"
+                                                            >
+                                                                <i className="fa-solid fa-pen text-[10px]"></i>
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    {item.is_available ?
+                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-green-50 text-green-700 border border-green-200 uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>Available</span> :
+                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-red-50 text-red-700 border border-red-200 uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>Sold Out</span>
+                                                    }
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <button
+                                                        onClick={() => toggleMenuAvailability(item)}
+                                                        className={`px-4 py-2 rounded-xl text-xs font-bold border transition shadow-sm cursor-pointer ${item.is_available ? "bg-white border-red-200 text-red-600 hover:bg-red-50" : "bg-black border-black text-white hover:bg-gray-800"}`}
+                                                    >
+                                                        {item.is_available ? "Mark Sold Out" : "Restore Item"}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         )}
                     </div>

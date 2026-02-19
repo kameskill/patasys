@@ -298,6 +298,17 @@ function Home() {
 
     const placeOrder = async () => {
         setMsg({ type: "", text: "" });
+
+        const unavailableItems = cart.filter(cartItem => {
+            const menuItem = menu.find(m => m.id === cartItem.id);
+            return menuItem && !menuItem.is_available;
+        });
+
+        if (unavailableItems.length > 0) {
+            const names = unavailableItems.map(item => item.name).join(", ");
+            return setError(`Cannot checkout. The following items are currently unavailable: ${names}. Please remove them from your cart.`);
+        }
+
         if (cart.length === 0) return setError("Your cart is empty.");
 
         const effective = {
@@ -348,7 +359,6 @@ function Home() {
         setShowCancelModal(true);
     };
 
-    
     const confirmCancelOrder = async () => {
         if (!orderToCancel) return;
 
@@ -436,9 +446,12 @@ function Home() {
                 open={modalOpen}
                 item={selectedItem}
                 onClose={() => { setModalOpen(false); setSelectedItem(null); }}
-                onAddToCart={(item) => {
-                    addToCart(item);
-                    setSuccess(`${item.name} added to cart!`);
+                onAddToCart={(item, qty = 1) => {
+                    if (!item.is_available) return;
+                    for (let i = 0; i < qty; i++) {
+                        addToCart(item);
+                    }
+                    setSuccess(`Added ${qty}x ${item.name} to cart!`);
                     setModalOpen(false);
                 }}
             />
@@ -484,7 +497,7 @@ function Home() {
             <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/80 border-b border-gray-200 transition-all duration-200">
                 <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between relative">
                     <div className="flex items-center gap-2 cursor-pointer" onClick={() => setTab("menu")}>
-                        <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Crispy Pata sa A.Luna</h1>
+                        <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-gray-900">A.Luna</h1>
                     </div>
 
                     <nav className="hidden md:flex items-center gap-1 bg-gray-100/50 p-1 rounded-full">

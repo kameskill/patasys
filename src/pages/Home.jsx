@@ -579,7 +579,7 @@ function Home() {
                 </div>
             )}
 
-            <main className="max-w-7xl mx-auto p-4 md:p-8">
+            <main className="max-w-7xl mx-auto p-4 md:p-4">
                 {active === "menu" && (
                     <div className="animate-[fadeIn_0.3s_ease-out]">
                         <div className="flex flex-col md:flex-row md:items-end justify-between mb-4 gap-4">

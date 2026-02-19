@@ -250,7 +250,7 @@ function LandingPage() {
 
       <main className="flex flex-col gap-4 p-4 md:p-0 max-w-7xl mx-auto">
         <section
-          className="relative w-full h-125 md:h-162.5 lg:h-175 mt-4 overflow-hidden rounded-2xl group bg-gray-900 shadow-xl"
+          className="relative w-full h-125 md:h-162.5 lg:h-175 md:mt-4 overflow-hidden rounded-2xl group bg-gray-900 shadow-xl"
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}

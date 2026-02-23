@@ -52,9 +52,8 @@ function Home() {
     const [profile, setProfile] = useState({
         full_name: "",
         phone: "",
-        notes: "",
     });
-    const [savingProfile, setSavingProfile] = useState(false);
+
     const [loadingProfile, setLoadingProfile] = useState(true);
     const [isProfileLoaded, setIsProfileLoaded] = useState(false);
 
@@ -112,7 +111,6 @@ function Home() {
         setCheckout((prev) => ({
             ...prev,
             phone: prev.phone?.trim() ? prev.phone : p.phone || "",
-            notes: prev.notes?.trim() ? prev.notes : p.notes || "",
         }));
     };
 
@@ -186,7 +184,7 @@ function Home() {
         setLoadingProfile(true);
         const { data, error } = await supabase
             .from("profiles")
-            .select("full_name, phone, notes, cart_data, is_admin")
+            .select("full_name, phone, cart_data, is_admin")
             .eq("user_id", u.id)
             .maybeSingle();
 
@@ -205,7 +203,6 @@ function Home() {
         const p = {
             full_name: data?.full_name || "",
             phone: data?.phone || "",
-            notes: data?.notes || "",
         };
 
         setProfile(p);
@@ -281,23 +278,6 @@ function Home() {
         if (id === "cart") fillCheckoutFromProfile(profile);
     };
 
-    const saveProfile = async () => {
-        setSavingProfile(true);
-        const { error } = await supabase.from("profiles").upsert({
-            user_id: user.id,
-            full_name: profile.full_name,
-            phone: profile.phone,
-            notes: profile.notes || null,
-        }, { onConflict: "user_id" });
-
-        if (error) setError("Failed to save profile.");
-        else {
-            setSuccess("Profile saved.");
-            fillCheckoutFromProfile(profile);
-        }
-        setSavingProfile(false);
-    };
-
     const placeOrder = async () => {
         setMsg({ type: "", text: "" });
 
@@ -315,7 +295,7 @@ function Home() {
 
         const effective = {
             phone: checkout.phone?.trim() ? checkout.phone : profile.phone,
-            notes: checkout.notes?.trim() ? checkout.notes : profile.notes,
+            notes: checkout.notes?.trim() ? checkout.notes : "",
             payment: checkout.payment,
         };
 
@@ -863,21 +843,61 @@ function Home() {
                 {active === "profile" && (
                     <div className="max-w-2xl mx-auto animate-[fadeIn_0.3s_ease-out]">
                         <h2 className="text-3xl font-bold mb-6">Your Profile</h2>
-                        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm mb-6">
-                            <div className="flex items-center gap-4 mb-6">
-                                <div className="w-16 h-16 bg-black rounded-full flex items-center justify-center text-white text-2xl font-bold">{profile.full_name ? profile.full_name.charAt(0).toUpperCase() : <i className="fa-solid fa-user"></i>}</div>
-                                <div><h3 className="text-xl font-bold">{profile.full_name || "Guest User"}</h3><p className="text-gray-500 text-sm">{user.email}</p></div>
+                        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm mb-6 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 bg-gray-100 border-b border-l border-gray-200 text-gray-500 text-xs font-bold px-3 py-1.5 rounded-bl-xl flex items-center gap-1.5 shadow-sm">
+                                <i className="fa-solid fa-lock text-[10px]"></i> Secured
                             </div>
-                            <div className="space-y-4">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div><label className="text-sm font-semibold text-gray-700 mb-1.5 block">Full Name</label><input value={profile.full_name} onChange={(e) => setProfile((p) => ({ ...p, full_name: e.target.value }))} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition" /></div>
-                                    <div><label className="text-sm font-semibold text-gray-700 mb-1.5 block">Phone Number</label><input value={profile.phone} onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition" placeholder="09xx xxx xxxx" /></div>
+
+                            <div className="flex items-center gap-4 mb-8">
+                                <div className="w-16 h-16 bg-black rounded-full flex items-center justify-center text-white text-2xl font-bold shadow-md">
+                                    {profile.full_name ? profile.full_name.charAt(0).toUpperCase() : <i className="fa-solid fa-user"></i>}
                                 </div>
-                                <div><label className="text-sm font-semibold text-gray-700 mb-1.5 block">Default Notes</label><textarea value={profile.notes} onChange={(e) => setProfile((p) => ({ ...p, notes: e.target.value }))} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition resize-none" rows={3} /></div>
+                                <div>
+                                    <h3 className="text-xl font-bold text-gray-900">{profile.full_name || "Guest User"}</h3>
+                                    <p className="text-gray-500 text-sm font-medium">{user.email}</p>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-3 mt-6 pt-6 border-t border-gray-100">
-                                <button onClick={saveProfile} disabled={savingProfile} className="px-6 py-2.5 bg-black text-white rounded-full font-bold text-sm hover:bg-gray-800 transition disabled:opacity-50 cursor-pointer">{savingProfile ? "Saving..." : "Save Changes"}</button>
-                                <button onClick={() => setShowLogoutModal(true)} className="px-6 py-2.5 text-red-600 font-bold text-sm hover:bg-red-50 rounded-full transition cursor-pointer">Log Out</button>
+
+                            <div className="space-y-5">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div>
+                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block">Full Name</label>
+                                        <div className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-500 font-medium cursor-not-allowed">
+                                            {profile.full_name || "Not provided"}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block">Email Address</label>
+                                        <div className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-500 font-medium cursor-not-allowed truncate">
+                                            {user.email}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block">Phone Number</label>
+                                        <div className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-500 font-medium cursor-not-allowed">
+                                            {profile.phone || "Not provided"}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block">Account Status</label>
+                                        <div className="w-full bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700 font-bold flex items-center gap-2 cursor-not-allowed">
+                                            <i className="fa-solid fa-shield-check text-green-600"></i> Verified Account
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-100 rounded-xl mt-4">
+                                    <i className="fa-solid fa-circle-info text-blue-600 mt-0.5"></i>
+                                    <p className="text-xs text-blue-800 leading-relaxed font-medium">
+                                        For security purposes, your personal details are locked. If you need to update your phone number or email, please contact customer support or ask the admin in-store.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 mt-8 pt-6 border-t border-gray-100">
+                                <button onClick={() => setShowLogoutModal(true)} className="px-8 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-full shadow-md transition-all active:scale-[0.98] cursor-pointer">
+                                    Log Out
+                                </button>
                             </div>
                         </div>
                     </div>

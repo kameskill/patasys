@@ -607,7 +607,7 @@ function AdminDashboard() {
                                                         onClick={() => toggleMenuAvailability(item)}
                                                         className={`px-4 py-2 rounded-xl text-xs font-bold border transition shadow-sm cursor-pointer ${item.is_available ? "bg-white border-red-200 text-red-600 hover:bg-red-50" : "bg-black border-black text-white hover:bg-gray-800"}`}
                                                     >
-                                                        {item.is_available ? "Mark Sold Out" : "Restore Item"}
+                                                        {item.is_available ? "Mark Sold Out" : "Mark as Available"}
                                                     </button>
                                                 </td>
                                             </tr>

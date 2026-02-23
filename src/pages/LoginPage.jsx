@@ -28,14 +28,26 @@ function LoginPage() {
         agree: false,
     });
 
+    const [otpSent, setOtpSent] = useState(false);
+    const [generatedOtp, setGeneratedOtp] = useState("");
+    const [enteredOtp, setEnteredOtp] = useState("");
+    const [resendTimer, setResendTimer] = useState(0);
+
     const setError = (text) => setMsg({ type: "error", text });
     const setSuccess = (text) => setMsg({ type: "success", text });
 
     const isValidEmail = (email) =>
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim());
 
-    const cleanPhoneDigits = (v) => String(v || "").replace(/\D/g, "").slice(0, 11);
-    const isValidPHPhone11 = (v) => /^\d{11}$/.test(String(v || ""));
+    const cleanPhone10 = (v) => String(v || "").replace(/\D/g, "").slice(0, 10);
+
+    const isValidPassword = (password) => {
+        const hasUpper = /[A-Z]/.test(password);
+        const hasNumber = /[0-9]/.test(password);
+        const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+        const isValidLength = password.length >= 8;
+        return hasUpper && hasNumber && hasSpecial && isValidLength;
+    };
 
     const fullNameFromReg = useMemo(() => {
         const fn = regForm.first_name.trim();
@@ -98,9 +110,7 @@ function LoginPage() {
 
         const go = async (userId) => {
             if (!alive) return;
-
             setPageState("redirecting");
-
             redirectByRoleSafe(userId);
         };
 
@@ -138,6 +148,22 @@ function LoginPage() {
             listener?.subscription?.unsubscribe();
         };
     }, [navigate]);
+
+    useEffect(() => {
+        let interval;
+        if (resendTimer > 0) {
+            interval = setInterval(() => {
+                setResendTimer((prev) => prev - 1);
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [resendTimer]);
+
+    const formatTimer = (seconds) => {
+        const m = Math.floor(seconds / 60);
+        const s = String(seconds % 60).padStart(2, '0');
+        return `${m}:${s}`;
+    };
 
     const title = useMemo(
         () => (activeTab === "login" ? "Welcome Back" : "Get Started"),
@@ -191,44 +217,134 @@ function LoginPage() {
                 redirectByRoleSafe(u.id);
             }
         } catch (err) {
-            console.error(err);
             setError(err.message || "Login failed.");
         } finally {
             setLoading(false);
         }
     }
 
-    async function onSubmitRegister(e) {
-        e.preventDefault();
+    const sendOtp = async (e) => {
+        if (e) e.preventDefault();
         setMsg({ type: "", text: "" });
 
         const first = regForm.first_name.trim();
         const last = regForm.last_name.trim();
         const email = regForm.email.trim();
-        const phone = cleanPhoneDigits(regForm.phone);
+        const phone = regForm.phone.trim();
 
         if (!first) return setError("First name is required.");
         if (!last) return setError("Last name is required.");
-        if (!isValidEmail(email)) return setError("Please enter a valid email (must include @).");
-        if (!isValidPHPhone11(phone)) return setError("Phone must be exactly 11 digits (numbers only).");
+        if (!isValidEmail(email)) return setError("Please enter a valid email.");
+        if (phone.length !== 10 || !phone.startsWith("9")) return setError("Phone must be exactly 10 digits and start with 9.");
+        if (!isValidPassword(regForm.password)) return setError("Password must be at least 8 characters long, include an uppercase letter, a number, and a special character.");
         if (regForm.password !== regForm.confirm) return setError("Passwords do not match.");
         if (!regForm.agree) return setError("Please agree to the Terms.");
 
         setLoading(true);
 
-        try {
-            const emailRedirectTo = `${window.location.origin}/auth/callback`;
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+        setGeneratedOtp(otpCode);
 
+        const formattedPhone = "+63" + phone;
+
+        const apiKey = import.meta.env.VITE_TEXTBEE_API_KEY;
+        const deviceId = import.meta.env.VITE_TEXTBEE_DEVICE_ID;
+
+        if (!apiKey || !deviceId) {
+            setLoading(false);
+            return setError("API Key or Device ID is missing in environment variables.");
+        }
+
+        try {
+            const response = await fetch(`https://api.textbee.dev/api/v1/gateway/devices/${deviceId}/send-sms`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-api-key": apiKey
+                },
+                body: JSON.stringify({
+                    recipients: [formattedPhone],
+                    message: `Crispy Pata sa A. Luna: Your verification code is ${otpCode}. Do not share this with anyone.`
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error("API Request Failed");
+            }
+
+            setOtpSent(true);
+            setResendTimer(300);
+        } catch (err) {
+            setError("Failed to send code. Please check your Textbee API Key and Device ID.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleResendOtp = async () => {
+        setMsg({ type: "", text: "" });
+        setLoading(true);
+
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+        setGeneratedOtp(otpCode);
+
+        const formattedPhone = "+63" + regForm.phone.trim();
+
+        const apiKey = import.meta.env.VITE_TEXTBEE_API_KEY;
+        const deviceId = import.meta.env.VITE_TEXTBEE_DEVICE_ID;
+
+        try {
+            const response = await fetch(`https://api.textbee.dev/api/v1/gateway/devices/${deviceId}/send-sms`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-api-key": apiKey
+                },
+                body: JSON.stringify({
+                    recipients: [formattedPhone],
+                    message: `Crispy Pata sa A.Luna: Your NEW verification code is ${otpCode}. Do not share this with anyone.`
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error("API Request Failed");
+            }
+
+            setSuccess("Verification code resent successfully.");
+            setResendTimer(300);
+        } catch (err) {
+            setError("Failed to resend code. Please try again.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const verifyAndCreateAccount = async (e) => {
+        e.preventDefault();
+        setMsg({ type: "", text: "" });
+        setLoading(true);
+
+        if (enteredOtp !== generatedOtp) {
+            setError("Invalid verification code.");
+            setLoading(false);
+            return;
+        }
+
+        const first = regForm.first_name.trim();
+        const last = regForm.last_name.trim();
+        const email = regForm.email.trim();
+        const formattedPhone = "+63" + regForm.phone.trim();
+
+        try {
             const { data, error } = await supabase.auth.signUp({
                 email,
                 password: regForm.password,
                 options: {
-                    emailRedirectTo,
                     data: {
                         first_name: first,
                         last_name: last,
                         full_name: `${first} ${last}`,
-                        phone,
+                        phone: formattedPhone,
                     },
                 },
             });
@@ -251,52 +367,17 @@ function LoginPage() {
                 return;
             }
 
-            if (!data.session) {
-                setSuccess("Registered! Please check your email to confirm your account.");
-                return;
-            }
-
             if (data?.user?.id) {
-                await upsertProfile(data.user.id, first, last, phone);
+                await upsertProfile(data.user.id, first, last, formattedPhone);
                 setPageState("redirecting");
                 redirectByRoleSafe(data.user.id);
             }
         } catch (err) {
-            console.error(err);
             setError(err.message || "Register failed.");
         } finally {
             setLoading(false);
         }
-    }
-
-    async function resendConfirmation() {
-        setMsg({ type: "", text: "" });
-
-        if (!regForm.email) {
-            setError("Enter your email first (in the register email field).");
-            return;
-        }
-
-        setLoading(true);
-        try {
-            const emailRedirectTo = `${window.location.origin}/auth/callback`;
-
-            const { error } = await supabase.auth.resend({
-                type: "signup",
-                email: regForm.email.trim(),
-                options: { emailRedirectTo },
-            });
-
-            if (error) throw error;
-
-            setSuccess("Confirmation email sent. Please check your inbox/spam.");
-        } catch (err) {
-            console.error(err);
-            setError(err.message || "Failed to resend confirmation email.");
-        } finally {
-            setLoading(false);
-        }
-    }
+    };
 
     if (pageState === "checking" || pageState === "redirecting") {
         return (
@@ -427,6 +508,8 @@ function LoginPage() {
                                 onClick={() => {
                                     setMsg({ type: "", text: "" });
                                     setActiveTab("login");
+                                    setOtpSent(false);
+                                    setResendTimer(0);
                                 }}
                             >
                                 Log In
@@ -436,6 +519,8 @@ function LoginPage() {
                                 onClick={() => {
                                     setMsg({ type: "", text: "" });
                                     setActiveTab("register");
+                                    setOtpSent(false);
+                                    setResendTimer(0);
                                 }}
                             >
                                 Sign Up
@@ -528,8 +613,8 @@ function LoginPage() {
                             </form>
                         )}
 
-                        {activeTab === "register" && (
-                            <form onSubmit={onSubmitRegister} className="space-y-5">
+                        {activeTab === "register" && !otpSent && (
+                            <form onSubmit={sendOtp} className="space-y-5">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label htmlFor="first_name" className={labelClass}>
@@ -565,17 +650,22 @@ function LoginPage() {
                                     <label htmlFor="phone" className={labelClass}>
                                         Phone Number
                                     </label>
-                                    <input
-                                        type="tel"
-                                        id="phone"
-                                        className={inputClass}
-                                        placeholder="09XXXXXXXXX"
-                                        maxLength={11}
-                                        required
-                                        value={regForm.phone}
-                                        onChange={(e) => setRegForm((p) => ({ ...p, phone: cleanPhoneDigits(e.target.value) }))}
-                                    />
-                                    <p className="mt-1 text-xs text-gray-500">Format: 11 digits (e.g., 09171234567)</p>
+                                    <div className="flex shadow-sm rounded-lg">
+                                        <span className="inline-flex items-center px-4 text-sm text-gray-900 bg-gray-100 border border-r-0 border-gray-300 rounded-l-lg font-bold">
+                                            +63
+                                        </span>
+                                        <input
+                                            type="tel"
+                                            id="phone"
+                                            className="rounded-none rounded-r-lg bg-gray-50 border border-gray-300 text-gray-900 focus:ring-black focus:border-black block flex-1 min-w-0 w-full text-sm p-2.5 outline-none transition-colors duration-200"
+                                            placeholder="9XXXXXXXXX"
+                                            maxLength={10}
+                                            required
+                                            value={regForm.phone}
+                                            onChange={(e) => setRegForm((p) => ({ ...p, phone: cleanPhone10(e.target.value) }))}
+                                        />
+                                    </div>
+                                    <p className="mt-1 text-xs text-gray-500">Enter the remaining 10 digits (e.g., 9171234567)</p>
                                 </div>
 
                                 <div>
@@ -616,6 +706,7 @@ function LoginPage() {
                                                 <i className={`fa-regular ${showRegPw ? 'fa-eye-slash' : 'fa-eye'}`}></i>
                                             </button>
                                         </div>
+                                        <p className="mt-1 text-[11px] text-gray-500">Min 8 chars, 1 uppercase, 1 number, 1 special char.</p>
                                     </div>
                                     <div>
                                         <label htmlFor="confirm-password" className={labelClass}>
@@ -633,23 +724,27 @@ function LoginPage() {
                                     </div>
                                 </div>
 
-                                <div className="flex items-start">
+                                <div className="flex items-start pt-1">
                                     <div className="flex items-center h-5">
                                         <input
                                             id="terms"
                                             type="checkbox"
-                                            className="w-4 h-4 border border-gray-300 rounded bg-gray-50 focus:ring-3 focus:ring-primary-300 accent-black"
+                                            className="w-4 h-4 border border-gray-300 rounded bg-gray-50 focus:ring-3 focus:ring-primary-300 accent-black cursor-pointer"
                                             required
                                             checked={regForm.agree}
                                             onChange={(e) => setRegForm((p) => ({ ...p, agree: e.target.checked }))}
                                         />
                                     </div>
-                                    <label htmlFor="terms" className="ml-2 text-sm font-medium text-gray-900">
+                                    <label htmlFor="terms" className="ml-2 text-sm font-medium text-gray-900 cursor-pointer">
                                         I agree with the{" "}
                                         <button
                                             type="button"
                                             className="text-black hover:underline font-bold cursor-pointer"
-                                            onClick={() => setShowTerms(true)}
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setShowTerms(true);
+                                            }}
                                         >
                                             Terms and Conditions
                                         </button>
@@ -664,22 +759,68 @@ function LoginPage() {
                                     {loading ? (
                                         <div className="flex items-center justify-center gap-2">
                                             <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                            <span>Creating account...</span>
+                                            <span>Sending Code...</span>
                                         </div>
                                     ) : (
-                                        "Create account"
+                                        "Send Verification Code"
                                     )}
                                 </button>
+                            </form>
+                        )}
 
-                                <div className="text-center mt-4">
+                        {activeTab === "register" && otpSent && (
+                            <form onSubmit={verifyAndCreateAccount} className="space-y-5 animate-[fadeIn_0.3s_ease-out]">
+                                <div className="text-center mb-6">
+                                    <div className="w-16 h-16 bg-blue-50 text-black rounded-full flex items-center justify-center mx-auto mb-4">
+                                        <i className="fa-solid fa-comment-sms text-4xl"></i>
+                                    </div>
+                                    <p className="text-sm text-gray-500 mb-1">We sent a verification code to</p>
+                                    <p className="font-bold text-xl text-gray-900 tracking-wider">
+                                        {`+63 ${regForm.phone.slice(0, 3)} **** ${regForm.phone.slice(-3)}`}
+                                    </p>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold mb-2 text-center text-gray-700">Enter 6-Digit Code</label>
+                                    <input
+                                        required
+                                        type="text"
+                                        maxLength="6"
+                                        value={enteredOtp}
+                                        onChange={e => setEnteredOtp(e.target.value.replace(/\D/g, ''))}
+                                        className="w-full border-2 border-gray-300 rounded-xl px-4 py-4 text-center text-3xl font-black tracking-[0.5em] outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-colors"
+                                        placeholder="------"
+                                    />
+                                </div>
+                                <div className="flex flex-col gap-3 pt-2">
                                     <button
-                                        type="button"
-                                        onClick={resendConfirmation}
-                                        disabled={loading}
-                                        className="text-sm text-gray-500 hover:text-gray-900 hover:underline transition-colors duration-200 cursor-pointer"
+                                        disabled={loading || enteredOtp.length !== 6}
+                                        type="submit"
+                                        className="w-full bg-black text-white py-3.5 rounded-xl font-bold text-base hover:bg-gray-800 disabled:opacity-50 transition-all cursor-pointer shadow-md active:scale-[0.99]"
                                     >
-                                        Didn't receive confirmation email? Resend
+                                        {loading ? "Verifying..." : "Verify & Create Account"}
                                     </button>
+
+                                    <div className="flex items-center justify-between mt-2 px-1">
+                                        <button
+                                            type="button"
+                                            onClick={handleResendOtp}
+                                            disabled={loading || resendTimer > 0}
+                                            className="text-sm font-semibold text-gray-700 hover:text-black hover:underline transition-colors cursor-pointer disabled:opacity-50 disabled:no-underline"
+                                        >
+                                            {resendTimer > 0 ? `Resend Code (${formatTimer(resendTimer)})` : "Resend Code"}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setOtpSent(false);
+                                                setEnteredOtp("");
+                                                setResendTimer(0);
+                                            }}
+                                            className="text-sm font-semibold text-gray-500 hover:text-black transition-colors cursor-pointer"
+                                        >
+                                            Change Phone Number
+                                        </button>
+                                    </div>
                                 </div>
                             </form>
                         )}

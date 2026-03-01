@@ -3,12 +3,10 @@ import React, { useEffect, useState } from "react";
 export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
     const [quantity, setQuantity] = useState(1);
 
-    // Reset quantity to 1 whenever the item changes or modal opens
     useEffect(() => {
         if (open) setQuantity(1);
     }, [open, item]);
 
-    // Handle Escape key
     useEffect(() => {
         if (!open) return;
         const onKeyDown = (e) => {
@@ -24,12 +22,10 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
     const handleDecrement = () => setQuantity((p) => (p > 1 ? p - 1 : 1));
 
     const handleAddToCart = () => {
-        // Call the parent function with the item and the specific quantity
         onAddToCart(item, quantity);
         onClose();
     };
 
-    // Format Helpers
     const formatPrice = (p) =>
         new Intl.NumberFormat("en-PH", {
             style: "currency",
@@ -46,16 +42,13 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
             role="dialog"
             aria-modal="true"
         >
-            {/* Backdrop */}
             <div
                 className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
                 onClick={onClose}
             />
 
-            {/* Modal Card */}
             <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-200">
 
-                {/* Floating Close Button */}
                 <button
                     onClick={onClose}
                     className="absolute top-4 right-4 z-10 p-2 bg-white/90 hover:bg-white rounded-full shadow-md transition-transform active:scale-95"
@@ -65,7 +58,6 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
                     </svg>
                 </button>
 
-                {/* Hero Image */}
                 <div className="h-64 w-full bg-gray-100 shrink-0">
                     {item.image_url ? (
                         <img
@@ -80,7 +72,6 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
                     )}
                 </div>
 
-                {/* Content Body */}
                 <div className="flex flex-col flex-1 p-6 overflow-y-auto">
                     <div className="flex justify-between items-start gap-4 mb-2">
                         <h3 className="text-2xl font-bold text-gray-900 leading-tight">
@@ -91,7 +82,6 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
                         </span>
                     </div>
 
-                    {/* Tags */}
                     <div className="flex items-center gap-3 text-sm text-gray-500 mb-4 font-medium">
                         {prep && (
                             <span className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded-md">
@@ -109,11 +99,9 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
                         {item.description || "Made fresh to order, perfectly seasoned and crispy."}
                     </p>
 
-                    {/* Footer Actions (Sticky bottom of modal content) */}
                     <div className="mt-auto pt-4 border-t border-gray-100">
                         <div className="flex items-center justify-between gap-4">
 
-                            {/* Quantity Counter */}
                             <div className="flex items-center border border-gray-300 rounded-full px-1 py-1">
                                 <button
                                     onClick={handleDecrement}
@@ -130,7 +118,6 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
                                 </button>
                             </div>
 
-                            {/* Add to Cart Button */}
                             <button
                                 onClick={handleAddToCart}
                                 className="flex-1 bg-black text-white font-bold py-3 px-4 rounded-full hover:bg-neutral-800 active:scale-95 transition flex justify-between items-center shadow-lg"

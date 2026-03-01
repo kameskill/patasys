@@ -10,7 +10,7 @@ function ForgotPasswordPage() {
         setMsg("");
 
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: "http://localhost:5173/reset-password",
+            redirectTo: `${window.location.origin}/reset-password`,
         });
 
         if (error) setMsg(error.message);
@@ -25,11 +25,11 @@ function ForgotPasswordPage() {
                     Enter your email and we’ll send a reset link.
                 </p>
 
-                {msg && <div className="mt-4 text-sm">{msg}</div>}
+                {msg && <div className="mt-4 text-sm font-medium text-blue-600">{msg}</div>}
 
                 <form onSubmit={sendReset} className="mt-5 flex flex-col gap-3">
                     <input
-                        className="w-full border border-gray-300 rounded-md p-2.5"
+                        className="w-full border border-gray-300 rounded-md p-2.5 outline-none focus:ring-2 focus:ring-black"
                         type="email"
                         placeholder="Email"
                         required
@@ -37,7 +37,7 @@ function ForgotPasswordPage() {
                         onChange={(e) => setEmail(e.target.value)}
                     />
 
-                    <button className="w-full bg-black text-white py-2.5 rounded font-semibold">
+                    <button className="w-full bg-black text-white py-2.5 rounded font-semibold hover:bg-gray-800 transition cursor-pointer">
                         Send reset link
                     </button>
                 </form>
@@ -46,4 +46,4 @@ function ForgotPasswordPage() {
     );
 }
 
-export default ForgotPasswordPage
+export default ForgotPasswordPage;

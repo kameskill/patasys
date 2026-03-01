@@ -9,6 +9,7 @@ function AdminDashboard() {
 
     const [checking, setChecking] = useState(true);
     const [isAdmin, setIsAdmin] = useState(false);
+    const [currentUserId, setCurrentUserId] = useState(null);
     const [activeTab, setActiveTab] = useState("orders");
 
     const [orders, setOrders] = useState([]);
@@ -24,6 +25,10 @@ function AdminDashboard() {
 
     const [menuItems, setMenuItems] = useState([]);
     const [loadingMenu, setLoadingMenu] = useState(false);
+
+    const [users, setUsers] = useState([]);
+    const [loadingUsers, setLoadingUsers] = useState(false);
+    const [userConfirmModal, setUserConfirmModal] = useState({ open: false, userId: null, action: null, userName: "" });
 
     const [editingPriceId, setEditingPriceId] = useState(null);
     const [editPriceValue, setEditPriceValue] = useState("");
@@ -44,6 +49,8 @@ function AdminDashboard() {
             try {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (!user) return navigate("/login", { replace: true });
+
+                setCurrentUserId(user.id);
 
                 const { data: prof } = await supabase
                     .from("profiles")
@@ -114,6 +121,22 @@ function AdminDashboard() {
         }
     };
 
+    const fetchUsers = async () => {
+        setLoadingUsers(true);
+        try {
+            const { data, error } = await supabase
+                .from("profiles")
+                .select("user_id, full_name, phone, is_admin, is_blocked")
+                .order("created_at", { ascending: false });
+            if (error) throw error;
+            setUsers(data || []);
+        } catch (e) {
+            setError("Failed to load users.");
+        } finally {
+            setLoadingUsers(false);
+        }
+    };
+
     const fetchUserNames = async (ordersList) => {
         const ids = [...new Set(ordersList.map(o => o.user_id).filter(Boolean))];
         if (!ids.length) return;
@@ -127,6 +150,7 @@ function AdminDashboard() {
         if (isAdmin) {
             if (activeTab === "orders") fetchOrders();
             if (activeTab === "menu") fetchMenu();
+            if (activeTab === "users") fetchUsers();
         }
     }, [isAdmin, activeTab]);
 
@@ -172,11 +196,39 @@ function AdminDashboard() {
 
     const executeStatusUpdate = async (orderId, status) => {
         setConfirmModal({ open: false, orderId: null, newStatus: null });
+
+        const orderToUpdate = orders.find(o => o.id === orderId);
+        const userId = orderToUpdate?.user_id;
+
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status, _saving: true } : o));
 
         try {
             const { error } = await supabase.from("orders").update({ status }).eq("id", orderId);
             if (error) throw error;
+
+            if (userId) {
+                let notifTitle = "Order Update";
+                let notifMessage = `Your order #${String(orderId).slice(0, 6)} is now ${status.toUpperCase()}.`;
+
+                if (status.toLowerCase() === "completed") {
+                    notifTitle = "Order Completed!";
+                    notifMessage = `Your order #${String(orderId).slice(0, 6)} is complete. Thank you for ordering with us! We hope you enjoyed your food.`;
+                } else if (status.toLowerCase() === "cancelled") {
+                    notifTitle = "Order Cancelled";
+                    notifMessage = `Your order #${String(orderId).slice(0, 6)} has been cancelled by the admin.`;
+                } else if (status.toLowerCase() === "ready") {
+                    notifTitle = "Order is Ready!";
+                    notifMessage = `Your order #${String(orderId).slice(0, 6)} is packed and ready for pickup!`;
+                }
+
+                await supabase.from("notifications").insert([{
+                    user_id: userId,
+                    title: notifTitle,
+                    message: notifMessage,
+                    is_read: false
+                }]);
+            }
+
             setSuccess(`Order updated to ${status}`);
             fetchOrders();
         } catch (e) {
@@ -239,6 +291,45 @@ function AdminDashboard() {
         setEditPriceValue("");
     };
 
+    const handleUserActionClick = (userId, action, userName) => {
+        setUserConfirmModal({ open: true, userId, action, userName });
+    };
+
+    const executeUserAction = async () => {
+        const { userId, action, userName } = userConfirmModal;
+        setUserConfirmModal({ open: false, userId: null, action: null, userName: "" });
+
+        try {
+            if (action === "block") {
+                const { error } = await supabase.from("profiles").update({ is_blocked: true }).eq("user_id", userId);
+                if (error) throw error;
+                setSuccess(`${userName} has been blocked from ordering.`);
+            } else if (action === "unblock") {
+                const { error } = await supabase.from("profiles").update({ is_blocked: false }).eq("user_id", userId);
+                if (error) throw error;
+                setSuccess(`${userName} has been unblocked.`);
+            } else if (action === "ban") {
+                await supabase.from("orders").delete().eq("user_id", userId);
+                const { error } = await supabase.from("profiles").delete().eq("user_id", userId);
+                if (error) throw error;
+                setSuccess(`${userName}'s data has been completely deleted (Banned).`);
+            } else if (action === "warn") {
+                const { error } = await supabase.from("notifications").insert([{
+                    user_id: userId,
+                    title: "Account Warning ⚠️",
+                    message: "Please avoid cancelling orders frequently. Excessive cancellations disrupt kitchen operations and may result in your account being blocked or banned.",
+                    is_read: false
+                }]);
+                if (error) throw error;
+                setSuccess(`Warning notification sent to ${userName}.`);
+            }
+            fetchUsers();
+        } catch (e) {
+            console.error(e);
+            setError(`Failed to ${action} user. Ensure Admin RLS policies are set.`);
+        }
+    };
+
     const handleLogout = async () => {
         await supabase.auth.signOut();
         navigate("/");
@@ -297,6 +388,31 @@ function AdminDashboard() {
                             <div className="flex gap-3 justify-center">
                                 <button onClick={() => setConfirmModal({ open: false, orderId: null, newStatus: null })} className="flex-1 px-5 py-2.5 rounded-full border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition cursor-pointer">Cancel</button>
                                 <button onClick={() => executeStatusUpdate(confirmModal.orderId, confirmModal.newStatus)} className="flex-1 px-5 py-2.5 rounded-full bg-black text-white font-medium hover:bg-gray-800 shadow-md transition cursor-pointer">Confirm</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {userConfirmModal.open && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
+                    <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
+                        <div className="p-4 text-center">
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${userConfirmModal.action === 'ban' ? 'bg-red-100 text-red-600' : userConfirmModal.action === 'warn' ? 'bg-amber-100 text-amber-600' : 'bg-orange-100 text-orange-600'}`}>
+                                <i className={`fa-solid ${userConfirmModal.action === 'ban' ? 'fa-user-slash' : userConfirmModal.action === 'warn' ? 'fa-triangle-exclamation' : 'fa-user-lock'} text-xl`}></i>
+                            </div>
+                            <h3 className="text-lg font-bold text-gray-900 mb-2">
+                                {userConfirmModal.action === 'ban' ? 'Ban User?' : userConfirmModal.action === 'warn' ? 'Send Warning?' : userConfirmModal.action === 'block' ? 'Block User?' : 'Unblock User?'}
+                            </h3>
+                            <p className="text-gray-500 text-sm mb-6">
+                                {userConfirmModal.action === 'ban' ? `This will permanently delete ${userConfirmModal.userName}'s profile and order history.` :
+                                    userConfirmModal.action === 'warn' ? `This will send a direct notification to ${userConfirmModal.userName} warning them about excessive order cancellations.` :
+                                        userConfirmModal.action === 'block' ? `This will prevent ${userConfirmModal.userName} from placing future orders.` :
+                                            `This will restore ${userConfirmModal.userName}'s ability to order.`}
+                            </p>
+                            <div className="flex gap-3 justify-center">
+                                <button onClick={() => setUserConfirmModal({ open: false, userId: null, action: null, userName: "" })} className="flex-1 px-5 py-2.5 rounded-full border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition cursor-pointer">Cancel</button>
+                                <button onClick={executeUserAction} className={`flex-1 px-5 py-2.5 rounded-full text-white font-medium shadow-md transition cursor-pointer ${userConfirmModal.action === 'ban' ? 'bg-red-600 hover:bg-red-700' : userConfirmModal.action === 'warn' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-orange-600 hover:bg-orange-700'}`}>Confirm</button>
                             </div>
                         </div>
                     </div>
@@ -379,6 +495,7 @@ function AdminDashboard() {
                             <nav className="hidden md:flex gap-1 bg-gray-100 p-1 rounded-full">
                                 <button onClick={() => setActiveTab("orders")} className={`px-5 py-1.5 rounded-full text-sm font-bold transition-all cursor-pointer ${activeTab === "orders" ? "bg-white text-black shadow-sm" : "text-gray-500 hover:text-black"}`}>Orders</button>
                                 <button onClick={() => setActiveTab("menu")} className={`px-5 py-1.5 rounded-full text-sm font-bold transition-all cursor-pointer ${activeTab === "menu" ? "bg-white text-black shadow-sm" : "text-gray-500 hover:text-black"}`}>Menu Manager</button>
+                                <button onClick={() => setActiveTab("users")} className={`px-5 py-1.5 rounded-full text-sm font-bold transition-all cursor-pointer ${activeTab === "users" ? "bg-white text-black shadow-sm" : "text-gray-500 hover:text-black"}`}>Users</button>
                             </nav>
                         </div>
                         <div className="flex items-center gap-2">
@@ -387,9 +504,10 @@ function AdminDashboard() {
                         </div>
                     </div>
                 </div>
-                <div className="md:hidden px-2 pb-2 pt-1 flex gap-1 bg-white border-t border-gray-100">
-                    <button onClick={() => setActiveTab("orders")} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${activeTab === "orders" ? "bg-black text-white" : "bg-gray-100 text-gray-500"}`}>Orders</button>
-                    <button onClick={() => setActiveTab("menu")} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${activeTab === "menu" ? "bg-black text-white" : "bg-gray-100 text-gray-500"}`}>Menu Manager</button>
+                <div className="md:hidden px-2 pb-2 pt-1 flex gap-1 bg-white border-t border-gray-100 overflow-x-auto">
+                    <button onClick={() => setActiveTab("orders")} className={`px-4 py-2 text-sm font-bold rounded-lg transition-colors shrink-0 ${activeTab === "orders" ? "bg-black text-white" : "bg-gray-100 text-gray-500"}`}>Orders</button>
+                    <button onClick={() => setActiveTab("menu")} className={`px-4 py-2 text-sm font-bold rounded-lg transition-colors shrink-0 ${activeTab === "menu" ? "bg-black text-white" : "bg-gray-100 text-gray-500"}`}>Menu Manager</button>
+                    <button onClick={() => setActiveTab("users")} className={`px-4 py-2 text-sm font-bold rounded-lg transition-colors shrink-0 ${activeTab === "users" ? "bg-black text-white" : "bg-gray-100 text-gray-500"}`}>Users</button>
                 </div>
             </header>
 
@@ -609,6 +727,95 @@ function AdminDashboard() {
                                                     >
                                                         {item.is_available ? "Mark Sold Out" : "Mark as Available"}
                                                     </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {activeTab === "users" && (
+                    <div className="animate-[fadeIn_0.2s_ease-out]">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                            <h2 className="text-2xl font-bold">User Management</h2>
+                            <button onClick={fetchUsers} disabled={loadingUsers} className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50 transition cursor-pointer flex items-center gap-2">
+                                <i className={`fa-solid fa-rotate-right ${loadingUsers ? 'animate-spin' : ''}`}></i> Refresh
+                            </button>
+                        </div>
+
+                        {loadingUsers ? (
+                            <div className="bg-white rounded-2xl border border-gray-200 h-64 flex items-center justify-center">
+                                <div className="flex flex-col items-center gap-3">
+                                    <div className="w-8 h-8 border-4 border-gray-900 border-t-transparent rounded-full animate-spin"></div>
+                                    <span className="text-gray-500 font-medium text-sm">Loading Users...</span>
+                                </div>
+                            </div>
+                        ) : users.length === 0 ? (
+                            <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-gray-300">
+                                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4"><i className="fa-solid fa-users text-gray-400 text-2xl"></i></div>
+                                <h3 className="text-lg font-bold text-gray-900 mb-1">No Users Found</h3>
+                            </div>
+                        ) : (
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-x-auto w-full">
+                                <table className="w-full text-left text-sm whitespace-nowrap min-w-max">
+                                    <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase text-[10px] font-black tracking-widest">
+                                        <tr>
+                                            <th className="px-6 py-4 rounded-tl-2xl">User Info</th>
+                                            <th className="px-6 py-4">Phone</th>
+                                            <th className="px-6 py-4">Status</th>
+                                            <th className="px-6 py-4 text-right rounded-tr-2xl">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {users.map((u) => (
+                                            <tr key={u.user_id} className={`hover:bg-gray-50/50 transition ${u.is_blocked ? "bg-red-50/30" : ""}`}>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-white shrink-0 ${u.is_admin ? 'bg-indigo-600' : 'bg-gray-800'}`}>
+                                                            {u.is_admin ? <i className="fa-solid fa-crown text-xs"></i> : u.full_name?.charAt(0).toUpperCase() || <i className="fa-solid fa-user text-xs"></i>}
+                                                        </div>
+                                                        <div className="flex flex-col">
+                                                            <span className="font-bold text-gray-900 flex items-center gap-2">
+                                                                {u.full_name || "Guest"}
+                                                                {u.is_admin && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded uppercase tracking-wider">Admin</span>}
+                                                            </span>
+                                                            <span className="text-xs text-gray-500 font-mono">{String(u.user_id).slice(0, 12)}...</span>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 font-medium text-gray-700">
+                                                    {u.phone || "N/A"}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    {u.is_blocked ?
+                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-orange-100 text-orange-800 border border-orange-200 uppercase tracking-wider"><i className="fa-solid fa-lock text-[8px]"></i>Blocked</span> :
+                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-green-50 text-green-700 border border-green-200 uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>Active</span>
+                                                    }
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    {u.user_id !== currentUserId && !u.is_admin && (
+                                                        <div className="flex justify-end gap-2">
+                                                            <button onClick={() => handleUserActionClick(u.user_id, 'warn', u.full_name)} className="h-8 w-8 flex items-center justify-center rounded-xl border bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100 transition cursor-pointer shadow-sm" title="Send Warning">
+                                                                <i className="fa-solid fa-triangle-exclamation text-xs"></i>
+                                                            </button>
+
+                                                            {u.is_blocked ? (
+                                                                <button onClick={() => handleUserActionClick(u.user_id, 'unblock', u.full_name)} className="px-4 py-1.5 rounded-xl text-xs font-bold border bg-white border-gray-200 text-gray-700 hover:bg-gray-50 transition cursor-pointer shadow-sm">
+                                                                    Unblock
+                                                                </button>
+                                                            ) : (
+                                                                <button onClick={() => handleUserActionClick(u.user_id, 'block', u.full_name)} className="px-4 py-1.5 rounded-xl text-xs font-bold border bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 transition cursor-pointer shadow-sm">
+                                                                    Block
+                                                                </button>
+                                                            )}
+                                                            <button onClick={() => handleUserActionClick(u.user_id, 'ban', u.full_name)} className="h-8 w-8 flex items-center justify-center rounded-xl border bg-red-50 border-red-200 text-red-600 hover:bg-red-100 transition cursor-pointer shadow-sm" title="Delete User Data">
+                                                                <i className="fa-solid fa-trash text-xs"></i>
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))}

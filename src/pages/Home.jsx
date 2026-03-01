@@ -52,6 +52,7 @@ function Home() {
     const [profile, setProfile] = useState({
         full_name: "",
         phone: "",
+        is_blocked: false,
     });
 
     const [loadingProfile, setLoadingProfile] = useState(true);
@@ -78,7 +79,7 @@ function Home() {
         if (msg.text) {
             const timer = setTimeout(() => {
                 setMsg({ type: "", text: "" });
-            }, 3000);
+            }, 3500);
             return () => clearTimeout(timer);
         }
     }, [msg]);
@@ -115,35 +116,74 @@ function Home() {
     };
 
     const fetchNotifications = async (userId) => {
-        const { data, error } = await supabase
-            .from("notifications")
-            .select("*")
-            .eq("user_id", userId)
-            .order("created_at", { ascending: false });
+        try {
+            const { data, error } = await supabase
+                .from("notifications")
+                .select("*")
+                .eq("user_id", userId)
+                .order("created_at", { ascending: false });
 
-        if (!error) {
-            setNotifications(data || []);
-            setUnreadCount((data || []).filter((n) => !n.is_read).length);
+            if (error) {
+                console.error("Fetch Notifications Error:", error.message);
+                return;
+            }
+
+            if (!data || data.length === 0) {
+                const welcomeNotif = {
+                    id: "temp-" + Date.now(),
+                    user_id: userId,
+                    title: "Welcome to A.Luna! 🎉",
+                    message: "We're glad you're here. Browse our menu and place your first crispy pata order today!",
+                    is_read: false,
+                    created_at: new Date().toISOString()
+                };
+
+                setNotifications([welcomeNotif]);
+                setUnreadCount(1);
+
+                await supabase.from("notifications").insert([{
+                    user_id: userId,
+                    title: welcomeNotif.title,
+                    message: welcomeNotif.message,
+                    is_read: false
+                }]);
+            } else {
+                setNotifications(data);
+                setUnreadCount(data.filter((n) => !n.is_read).length);
+            }
+        } catch (err) {
+            console.error("Unexpected notification error:", err);
         }
     };
 
     const markAsRead = async (notifId) => {
-        setNotifications((prev) =>
-            prev.map((n) => (n.id === notifId ? { ...n, is_read: true } : n))
-        );
-        setUnreadCount((prev) => Math.max(0, prev - 1));
+        try {
+            const targetNotif = notifications.find(n => n.id === notifId);
+            if (targetNotif && !targetNotif.is_read) {
+                setUnreadCount((prev) => Math.max(0, prev - 1));
+            }
+            setNotifications((prev) =>
+                prev.map((n) => (n.id === notifId ? { ...n, is_read: true } : n))
+            );
 
-        await supabase
-            .from("notifications")
-            .update({ is_read: true })
-            .eq("id", notifId);
+            if (notifId && !String(notifId).startsWith("temp-")) {
+                await supabase
+                    .from("notifications")
+                    .update({ is_read: true })
+                    .eq("id", notifId);
+            }
+        } catch (error) {
+            console.error("Error marking notification as read:", error);
+        }
     };
 
     const markAllAsRead = async () => {
         if (unreadCount === 0) return;
-        const ids = notifications.filter(n => !n.is_read).map(n => n.id);
+
         setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
         setUnreadCount(0);
+
+        const ids = notifications.filter(n => !n.is_read && !String(n.id).startsWith("temp-")).map(n => n.id);
 
         if (ids.length > 0) {
             await supabase
@@ -176,7 +216,8 @@ function Home() {
             user_id: u.id,
             full_name: fullName,
             phone: u.user_metadata?.phone || "",
-            cart_data: []
+            cart_data: [],
+            is_blocked: false
         }]);
     };
 
@@ -184,7 +225,7 @@ function Home() {
         setLoadingProfile(true);
         const { data, error } = await supabase
             .from("profiles")
-            .select("full_name, phone, cart_data, is_admin")
+            .select("full_name, phone, cart_data, is_admin, is_blocked")
             .eq("user_id", u.id)
             .maybeSingle();
 
@@ -203,6 +244,7 @@ function Home() {
         const p = {
             full_name: data?.full_name || "",
             phone: data?.phone || "",
+            is_blocked: data?.is_blocked || false,
         };
 
         setProfile(p);
@@ -230,15 +272,32 @@ function Home() {
             await fetchNotifications(u.id);
 
             const channel = supabase
-                .channel('realtime:notifications')
-                .on(
-                    'postgres_changes',
-                    { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${u.id}` },
-                    (payload) => {
-                        setNotifications((prev) => [payload.new, ...prev]);
-                        setUnreadCount((prev) => prev + 1);
+                .channel('user_realtime_events')
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${u.id}` }, (payload) => {
+                    setNotifications((prev) => {
+                        if (prev.some(n => n.id === payload.new.id)) return prev;
+                        setUnreadCount(count => count + 1);
+                        return [payload.new, ...prev];
+                    });
+                })
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `user_id=eq.${u.id}` }, (payload) => {
+                    const newOrder = payload.new;
+                    const oldOrder = payload.old;
+                    if (newOrder.status !== oldOrder.status) {
+                        setOrders((prev) => prev.map((o) => (o.id === newOrder.id ? newOrder : o)));
+                        setSuccess(`Order #${String(newOrder.id).slice(0, 6)} is now ${newOrder.status.toUpperCase()}!`);
                     }
-                )
+                })
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `user_id=eq.${u.id}` }, (payload) => {
+                    if (payload.new.is_blocked !== payload.old.is_blocked) {
+                        setProfile(p => ({ ...p, is_blocked: payload.new.is_blocked }));
+                        if (payload.new.is_blocked) {
+                            setError("Your account has been restricted from placing orders.");
+                        } else {
+                            setSuccess("Your account restriction has been lifted!");
+                        }
+                    }
+                })
                 .subscribe();
 
             return () => {
@@ -281,6 +340,10 @@ function Home() {
     const placeOrder = async () => {
         setMsg({ type: "", text: "" });
 
+        if (profile.is_blocked) {
+            return setError("Your account is restricted. You cannot place orders at this time.");
+        }
+
         const unavailableItems = cart.filter(cartItem => {
             const menuItem = menu.find(m => m.id === cartItem.id);
             return menuItem && !menuItem.is_available;
@@ -316,12 +379,19 @@ function Home() {
 
             if (error) throw error;
 
-            await supabase.from("notifications").insert([{
+            const newNotif = {
                 user_id: user.id,
                 title: "Order Placed",
-                message: `Your order for ₱${totalPrice} has been placed successfully.`,
+                message: `Thank you for your order! Your total is ₱${totalPrice}. We are now reviewing it.`,
                 is_read: false
-            }]);
+            };
+
+            const { data: insertedNotif } = await supabase.from("notifications").insert([newNotif]).select();
+
+            if (insertedNotif && insertedNotif.length > 0) {
+                setNotifications(prev => [insertedNotif[0], ...prev]);
+                setUnreadCount(prev => prev + 1);
+            }
 
             await supabase.from("profiles").update({ cart_data: [] }).eq('user_id', user.id);
             setSuccess("Order placed successfully!");
@@ -372,12 +442,19 @@ function Home() {
                 throw updateError;
             }
 
-            await supabase.from("notifications").insert([{
+            const newNotif = {
                 user_id: user.id,
                 title: "Order Cancelled",
-                message: `Order #${String(orderToCancel).slice(0, 8)} has been cancelled.`,
+                message: `Order #${String(orderToCancel).slice(0, 8)} has been cancelled successfully.`,
                 is_read: false
-            }]);
+            };
+
+            const { data: insertedNotif } = await supabase.from("notifications").insert([newNotif]).select();
+
+            if (insertedNotif && insertedNotif.length > 0) {
+                setNotifications(prev => [insertedNotif[0], ...prev]);
+                setUnreadCount(prev => prev + 1);
+            }
 
             setSuccess("Order cancelled successfully.");
             await fetchOrders();
@@ -404,6 +481,7 @@ function Home() {
         if (s === "pending") classes = "bg-yellow-50 text-yellow-700 border border-yellow-200";
         if (s === "cancelled") classes = "bg-red-50 text-red-700 border border-red-200";
         if (s === "preparing") classes = "bg-blue-50 text-blue-700 border border-blue-200";
+        if (s === "ready") classes = "bg-emerald-50 text-emerald-700 border border-emerald-200";
         return <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${classes}`}>{s}</span>;
     };
 
@@ -655,7 +733,7 @@ function Home() {
                                                 setSuccess(`${item.name} added to cart!`);
                                             }}
                                             onImageClick={() => openItemModal(item)}
-                                            disabled={!item.is_available}
+                                            disabled={!item.is_available || profile.is_blocked}
                                         />
 
                                         {!item.is_available && (
@@ -685,6 +763,16 @@ function Home() {
                         <h2 className="text-3xl font-bold mb-6">Your Cart</h2>
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                             <div className="lg:col-span-8 space-y-4">
+                                {profile.is_blocked && (
+                                    <div className="p-4 mb-2 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-red-800 shadow-sm">
+                                        <i className="fa-solid fa-ban mt-0.5 text-lg"></i>
+                                        <div className="text-sm">
+                                            <strong className="block mb-1 text-base">Account Restricted</strong>
+                                            <p>You have been blocked from placing new orders. If you believe this is a mistake, please contact support.</p>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {cart.length === 0 ? (
                                     <div className="bg-white rounded-2xl p-12 text-center border border-dashed border-gray-300">
                                         <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4"><i className="fa-solid fa-basket-shopping text-gray-300 text-2xl"></i></div>
@@ -747,7 +835,9 @@ function Home() {
                                         </div>
                                         <div className="border-t border-gray-100 pt-4 mt-2">
                                             <div className="flex justify-between items-end mb-4"><span className="text-gray-600">Total Amount</span><span className="text-3xl font-bold tracking-tight">₱{totalPrice}</span></div>
-                                            <button onClick={placeOrder} disabled={placing || cart.length === 0} className="w-full bg-black text-white py-3.5 rounded-full font-bold text-lg hover:bg-gray-800 hover:shadow-lg disabled:opacity-50 disabled:hover:shadow-none active:scale-[0.98] transition-all cursor-pointer">{placing ? <span className="flex items-center justify-center gap-2"><i className="fa-solid fa-circle-notch animate-spin"></i> Processing...</span> : "Place Order"}</button>
+                                            <button onClick={placeOrder} disabled={placing || cart.length === 0 || profile.is_blocked} className="w-full bg-black text-white py-3.5 rounded-full font-bold text-lg hover:bg-gray-800 hover:shadow-lg disabled:opacity-50 disabled:hover:shadow-none active:scale-[0.98] transition-all cursor-pointer">
+                                                {placing ? <span className="flex items-center justify-center gap-2"><i className="fa-solid fa-circle-notch animate-spin"></i> Processing...</span> : "Place Order"}
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -880,9 +970,15 @@ function Home() {
                                     </div>
                                     <div>
                                         <label className="text-sm font-bold text-gray-700 mb-1.5 block">Account Status</label>
-                                        <div className="w-full bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700 font-bold flex items-center gap-2 cursor-not-allowed">
-                                            <i className="fa-solid fa-shield-check text-green-600"></i> Verified Account
-                                        </div>
+                                        {profile.is_blocked ? (
+                                            <div className="w-full bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 font-bold flex items-center gap-2 cursor-not-allowed">
+                                                <i className="fa-solid fa-user-lock text-red-600"></i> Blocked Account
+                                            </div>
+                                        ) : (
+                                            <div className="w-full bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700 font-bold flex items-center gap-2 cursor-not-allowed">
+                                                <i className="fa-solid fa-shield-check text-green-600"></i> Verified Account
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 

@@ -414,34 +414,90 @@ function LoginPage() {
                             </button>
                         </div>
 
-                        <div className="p-6 overflow-y-auto space-y-5 text-sm text-gray-600 leading-relaxed">
+                        <div className="p-6 overflow-y-auto space-y-6 text-sm text-gray-600 leading-relaxed">
                             <div className="space-y-2">
                                 <h4 className="font-bold text-gray-900 text-base">1. Introduction</h4>
-                                <p>Welcome to <strong>Crispy Pata sa A.Luna</strong>. By accessing our website and placing an order, you agree to be bound by these Terms and Conditions. If you do not agree with any part of these terms, please do not use our services.</p>
+                                <p>
+                                    Welcome to <strong>Crispy Pata sa A. Luna</strong>. By accessing our website and placing an order,
+                                    you agree to comply with and be bound by the following Terms and Conditions.
+                                    If you do not agree with these terms, please refrain from using our system.
+                                </p>
                             </div>
 
                             <div className="space-y-2">
-                                <h4 className="font-bold text-gray-900 text-base">2. Ordering & Availability</h4>
-                                <ul className="list-disc pl-5 space-y-1">
-                                    <li>All orders are subject to acceptance and availability.</li>
-                                    <li>We reserve the right to refuse service to anyone for any reason at any time.</li>
-                                    <li>Items in your cart are not reserved until the order is successfully placed.</li>
+                                <h4 className="font-bold text-gray-900 text-base">2. Nature of Service</h4>
+                                <p>
+                                    This system is strictly for <strong>pickup orders only</strong>.
+                                    We do not provide delivery services. Customers are responsible
+                                    for personally claiming their orders at our store location.
+                                </p>
+                                <ul className="list-disc pl-5 space-y-1.5 marker:text-gray-400">
+                                    <li>No delivery or shipping services are offered.</li>
+                                    <li>Customers must pick up orders within the agreed pickup time.</li>
+                                    <li>Failure to claim orders on time may result in food quality deterioration, for which we are not liable.</li>
                                 </ul>
                             </div>
 
                             <div className="space-y-2">
-                                <h4 className="font-bold text-gray-900 text-base">3. Pricing & Payment</h4>
-                                <p>Prices for our products are subject to change without notice. We accept payments via the methods indicated on our checkout page. You agree to provide current, complete, and accurate purchase and account information for all purchases made.</p>
+                                <h4 className="font-bold text-gray-900 text-base">3. Ordering & Acceptance</h4>
+                                <ul className="list-disc pl-5 space-y-1.5 marker:text-gray-400">
+                                    <li>All orders are subject to confirmation and availability.</li>
+                                    <li>Submission of an order does not automatically guarantee acceptance.</li>
+                                    <li>We reserve the right to refuse or cancel any order at our discretion.</li>
+                                    <li>Items added to cart are not reserved until checkout is completed.</li>
+                                </ul>
                             </div>
 
                             <div className="space-y-2">
-                                <h4 className="font-bold text-gray-900 text-base">4. Cancellations & Refunds</h4>
-                                <p>Orders cannot be cancelled once food preparation has begun. Refunds or replacements are only issued for incorrect or defective items reported immediately upon receipt. Please inspect your order upon delivery.</p>
+                                <h4 className="font-bold text-gray-900 text-base">4. Pricing & Payment</h4>
+                                <p>
+                                    All prices are listed in Philippine Peso (PHP) and may change without prior notice.
+                                    Customers agree to provide accurate and complete payment information.
+                                </p>
+                                <ul className="list-disc pl-5 space-y-1.5 marker:text-gray-400">
+                                    <li>Orders will only be processed once payment is confirmed (for online payments).</li>
+                                    <li>We are not responsible for payment delays caused by third-party payment providers.</li>
+                                </ul>
                             </div>
 
                             <div className="space-y-2">
-                                <h4 className="font-bold text-gray-900 text-base">5. Privacy Policy</h4>
-                                <p>Your submission of personal information through the store is governed by our Privacy Policy. We collect your name, phone number, and email solely for the purpose of processing your orders and contacting you regarding your transaction.</p>
+                                <h4 className="font-bold text-gray-900 text-base">5. Cancellations & Refund Policy</h4>
+                                <ul className="list-disc pl-5 space-y-1.5 marker:text-gray-400">
+                                    <li>Orders cannot be cancelled once food preparation has started.</li>
+                                    <li>Refunds are only applicable for incorrect or missing items.</li>
+                                    <li>Concerns must be reported immediately upon pickup.</li>
+                                    <li>No refunds will be issued for failure to pick up orders.</li>
+                                </ul>
+                            </div>
+
+                            <div className="space-y-2">
+                                <h4 className="font-bold text-gray-900 text-base">6. Limitation of Liability</h4>
+                                <p>
+                                    We are not liable for delays caused by unforeseen circumstances, system errors,
+                                    force majeure events, or customer-provided incorrect information.
+                                </p>
+                                <p>
+                                    Once the order has been picked up, responsibility transfers to the customer.
+                                </p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <h4 className="font-bold text-gray-900 text-base">7. User Responsibilities</h4>
+                                <ul className="list-disc pl-5 space-y-1.5 marker:text-gray-400">
+                                    <li>Provide accurate contact details.</li>
+                                    <li>Arrive on time for pickup.</li>
+                                    <li>Present valid proof of order upon claiming.</li>
+                                </ul>
+                            </div>
+
+                            <div className="space-y-2">
+                                <h4 className="font-bold text-gray-900 text-base">8. Privacy Policy</h4>
+                                <p>
+                                    We collect personal information such as name, phone number, and email
+                                    solely for order processing and communication purposes.
+                                    We do not sell or share customer data with third parties except
+                                    as required for payment processing or legal compliance.
+                                </p>
                             </div>
                         </div>
 
@@ -624,7 +680,7 @@ function LoginPage() {
                                             type="text"
                                             id="first_name"
                                             className={inputClass}
-                                            placeholder="Juan"
+                                            placeholder="First Name"
                                             required
                                             value={regForm.first_name}
                                             onChange={(e) => setRegForm((p) => ({ ...p, first_name: e.target.value }))}
@@ -638,7 +694,7 @@ function LoginPage() {
                                             type="text"
                                             id="last_name"
                                             className={inputClass}
-                                            placeholder="Dela Cruz"
+                                            placeholder="Last Name"
                                             required
                                             value={regForm.last_name}
                                             onChange={(e) => setRegForm((p) => ({ ...p, last_name: e.target.value }))}

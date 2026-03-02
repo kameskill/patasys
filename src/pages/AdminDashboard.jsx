@@ -126,7 +126,7 @@ function AdminDashboard() {
         try {
             const { data, error } = await supabase
                 .from("profiles")
-                .select("user_id, full_name, phone, is_admin, is_blocked")
+                .select("user_id, full_name, phone, is_admin, is_blocked, is_banned")
                 .order("created_at", { ascending: false });
             if (error) throw error;
             setUsers(data || []);
@@ -309,10 +309,13 @@ function AdminDashboard() {
                 if (error) throw error;
                 setSuccess(`${userName} has been unblocked.`);
             } else if (action === "ban") {
-                await supabase.from("orders").delete().eq("user_id", userId);
-                const { error } = await supabase.from("profiles").delete().eq("user_id", userId);
+                const { error } = await supabase.from("profiles").update({ is_banned: true }).eq("user_id", userId);
                 if (error) throw error;
-                setSuccess(`${userName}'s data has been completely deleted (Banned).`);
+                setSuccess(`${userName} has been banned.`);
+            } else if (action === "unban") {
+                const { error } = await supabase.from("profiles").update({ is_banned: false }).eq("user_id", userId);
+                if (error) throw error;
+                setSuccess(`${userName} has been unbanned and restored.`);
             } else if (action === "warn") {
                 const { error } = await supabase.from("notifications").insert([{
                     user_id: userId,
@@ -398,21 +401,22 @@ function AdminDashboard() {
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
                     <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
                         <div className="p-4 text-center">
-                            <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${userConfirmModal.action === 'ban' ? 'bg-red-100 text-red-600' : userConfirmModal.action === 'warn' ? 'bg-amber-100 text-amber-600' : 'bg-orange-100 text-orange-600'}`}>
-                                <i className={`fa-solid ${userConfirmModal.action === 'ban' ? 'fa-user-slash' : userConfirmModal.action === 'warn' ? 'fa-triangle-exclamation' : 'fa-user-lock'} text-xl`}></i>
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${userConfirmModal.action === 'ban' ? 'bg-red-100 text-red-600' : userConfirmModal.action === 'unban' ? 'bg-green-100 text-green-600' : userConfirmModal.action === 'warn' ? 'bg-amber-100 text-amber-600' : 'bg-orange-100 text-orange-600'}`}>
+                                <i className={`fa-solid ${userConfirmModal.action === 'ban' ? 'fa-hammer' : userConfirmModal.action === 'unban' ? 'fa-user-check' : userConfirmModal.action === 'warn' ? 'fa-triangle-exclamation' : 'fa-user-lock'} text-xl`}></i>
                             </div>
                             <h3 className="text-lg font-bold text-gray-900 mb-2">
-                                {userConfirmModal.action === 'ban' ? 'Ban User?' : userConfirmModal.action === 'warn' ? 'Send Warning?' : userConfirmModal.action === 'block' ? 'Block User?' : 'Unblock User?'}
+                                {userConfirmModal.action === 'ban' ? 'Ban User?' : userConfirmModal.action === 'unban' ? 'Unban User?' : userConfirmModal.action === 'warn' ? 'Send Warning?' : userConfirmModal.action === 'block' ? 'Block User?' : 'Unblock User?'}
                             </h3>
                             <p className="text-gray-500 text-sm mb-6">
-                                {userConfirmModal.action === 'ban' ? `This will permanently delete ${userConfirmModal.userName}'s profile and order history.` :
-                                    userConfirmModal.action === 'warn' ? `This will send a direct notification to ${userConfirmModal.userName} warning them about excessive order cancellations.` :
-                                        userConfirmModal.action === 'block' ? `This will prevent ${userConfirmModal.userName} from placing future orders.` :
-                                            `This will restore ${userConfirmModal.userName}'s ability to order.`}
+                                {userConfirmModal.action === 'ban' ? `This will log ${userConfirmModal.userName} out and prevent them from accessing the app entirely.` :
+                                 userConfirmModal.action === 'unban' ? `This will restore ${userConfirmModal.userName}'s access to log in.` :
+                                 userConfirmModal.action === 'warn' ? `This will send a direct notification to ${userConfirmModal.userName} warning them about excessive order cancellations.` :
+                                 userConfirmModal.action === 'block' ? `This will prevent ${userConfirmModal.userName} from placing future orders.` :
+                                 `This will restore ${userConfirmModal.userName}'s ability to order.`}
                             </p>
                             <div className="flex gap-3 justify-center">
                                 <button onClick={() => setUserConfirmModal({ open: false, userId: null, action: null, userName: "" })} className="flex-1 px-5 py-2.5 rounded-full border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition cursor-pointer">Cancel</button>
-                                <button onClick={executeUserAction} className={`flex-1 px-5 py-2.5 rounded-full text-white font-medium shadow-md transition cursor-pointer ${userConfirmModal.action === 'ban' ? 'bg-red-600 hover:bg-red-700' : userConfirmModal.action === 'warn' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-orange-600 hover:bg-orange-700'}`}>Confirm</button>
+                                <button onClick={executeUserAction} className={`flex-1 px-5 py-2.5 rounded-full text-white font-medium shadow-md transition cursor-pointer ${userConfirmModal.action === 'ban' ? 'bg-red-600 hover:bg-red-700' : userConfirmModal.action === 'unban' ? 'bg-green-600 hover:bg-green-700' : userConfirmModal.action === 'warn' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-orange-600 hover:bg-orange-700'}`}>Confirm</button>
                             </div>
                         </div>
                     </div>
@@ -475,7 +479,7 @@ function AdminDashboard() {
 
                             {selectedOrder.notes && (
                                 <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-xl text-sm text-yellow-800">
-                                    <span className="font-bold block mb-1 flex items-center gap-2"><i className="fa-regular fa-comment-dots"></i> Special Instructions:</span>
+                                    <span className="font-bold mb-1 flex items-center gap-2"><i className="fa-regular fa-comment-dots"></i> Special Instructions:</span>
                                     <p className="italic">{selectedOrder.notes}</p>
                                 </div>
                             )}
@@ -771,7 +775,7 @@ function AdminDashboard() {
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
                                         {users.map((u) => (
-                                            <tr key={u.user_id} className={`hover:bg-gray-50/50 transition ${u.is_blocked ? "bg-red-50/30" : ""}`}>
+                                            <tr key={u.user_id} className={`hover:bg-gray-50/50 transition ${u.is_banned ? "bg-red-50/30" : u.is_blocked ? "bg-orange-50/30" : ""}`}>
                                                 <td className="px-6 py-4">
                                                     <div className="flex items-center gap-3">
                                                         <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-white shrink-0 ${u.is_admin ? 'bg-indigo-600' : 'bg-gray-800'}`}>
@@ -790,30 +794,41 @@ function AdminDashboard() {
                                                     {u.phone || "N/A"}
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    {u.is_blocked ?
-                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-orange-100 text-orange-800 border border-orange-200 uppercase tracking-wider"><i className="fa-solid fa-lock text-[8px]"></i>Blocked</span> :
+                                                    {u.is_banned ? (
+                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-red-100 text-red-800 border border-red-200 uppercase tracking-wider"><i className="fa-solid fa-ban text-[8px]"></i>Banned</span>
+                                                    ) : u.is_blocked ? (
+                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-orange-100 text-orange-800 border border-orange-200 uppercase tracking-wider"><i className="fa-solid fa-lock text-[8px]"></i>Blocked</span>
+                                                    ) : (
                                                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-green-50 text-green-700 border border-green-200 uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>Active</span>
-                                                    }
+                                                    )}
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
                                                     {u.user_id !== currentUserId && !u.is_admin && (
                                                         <div className="flex justify-end gap-2">
-                                                            <button onClick={() => handleUserActionClick(u.user_id, 'warn', u.full_name)} className="h-8 w-8 flex items-center justify-center rounded-xl border bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100 transition cursor-pointer shadow-sm" title="Send Warning">
-                                                                <i className="fa-solid fa-triangle-exclamation text-xs"></i>
-                                                            </button>
-
-                                                            {u.is_blocked ? (
-                                                                <button onClick={() => handleUserActionClick(u.user_id, 'unblock', u.full_name)} className="px-4 py-1.5 rounded-xl text-xs font-bold border bg-white border-gray-200 text-gray-700 hover:bg-gray-50 transition cursor-pointer shadow-sm">
-                                                                    Unblock
-                                                                </button>
+                                                            {!u.is_banned ? (
+                                                                <>
+                                                                    <button onClick={() => handleUserActionClick(u.user_id, 'warn', u.full_name)} className="h-8 w-8 flex items-center justify-center rounded-xl border bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100 transition cursor-pointer shadow-sm" title="Send Warning">
+                                                                        <i className="fa-solid fa-triangle-exclamation text-xs"></i>
+                                                                    </button>
+                                                                    
+                                                                    {u.is_blocked ? (
+                                                                        <button onClick={() => handleUserActionClick(u.user_id, 'unblock', u.full_name)} className="px-4 py-1.5 rounded-xl text-xs font-bold border bg-white border-gray-200 text-gray-700 hover:bg-gray-50 transition cursor-pointer shadow-sm">
+                                                                            Unblock
+                                                                        </button>
+                                                                    ) : (
+                                                                        <button onClick={() => handleUserActionClick(u.user_id, 'block', u.full_name)} className="px-4 py-1.5 rounded-xl text-xs font-bold border bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 transition cursor-pointer shadow-sm">
+                                                                            Block
+                                                                        </button>
+                                                                    )}
+                                                                    <button onClick={() => handleUserActionClick(u.user_id, 'ban', u.full_name)} className="h-8 w-8 flex items-center justify-center rounded-xl border bg-red-50 border-red-200 text-red-600 hover:bg-red-100 transition cursor-pointer shadow-sm" title="Ban User">
+                                                                        <i className="fa-solid fa-hammer text-xs"></i>
+                                                                    </button>
+                                                                </>
                                                             ) : (
-                                                                <button onClick={() => handleUserActionClick(u.user_id, 'block', u.full_name)} className="px-4 py-1.5 rounded-xl text-xs font-bold border bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 transition cursor-pointer shadow-sm">
-                                                                    Block
+                                                                <button onClick={() => handleUserActionClick(u.user_id, 'unban', u.full_name)} className="px-4 py-1.5 rounded-xl text-xs font-bold border bg-green-50 border-green-200 text-green-700 hover:bg-green-100 transition cursor-pointer shadow-sm">
+                                                                    Unban
                                                                 </button>
                                                             )}
-                                                            <button onClick={() => handleUserActionClick(u.user_id, 'ban', u.full_name)} className="h-8 w-8 flex items-center justify-center rounded-xl border bg-red-50 border-red-200 text-red-600 hover:bg-red-100 transition cursor-pointer shadow-sm" title="Delete User Data">
-                                                                <i className="fa-solid fa-trash text-xs"></i>
-                                                            </button>
                                                         </div>
                                                     )}
                                                 </td>

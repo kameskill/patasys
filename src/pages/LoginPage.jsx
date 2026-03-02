@@ -78,41 +78,15 @@ function LoginPage() {
             full_name: full_name || "",
             phone: phone || "",
             notes: null,
+            is_banned: false
         };
 
         const { error } = await supabase.from("profiles").upsert(payload, { onConflict: "user_id" });
         if (error) throw error;
     }
 
-    async function redirectByRoleSafe(userId) {
-        const timeout = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("role-timeout")), 4000)
-        );
-
-        try {
-            const roleFetch = supabase
-                .from("profiles")
-                .select("is_admin")
-                .eq("user_id", userId)
-                .single();
-
-            const { data: prof } = await Promise.race([roleFetch, timeout]);
-
-            if (prof?.is_admin) navigate("/admin/dashboard", { replace: true });
-            else navigate("/home", { replace: true });
-        } catch (e) {
-            navigate("/home", { replace: true });
-        }
-    }
-
     useEffect(() => {
         let alive = true;
-
-        const go = async (userId) => {
-            if (!alive) return;
-            setPageState("redirecting");
-            redirectByRoleSafe(userId);
-        };
 
         const check = async () => {
             try {
@@ -126,7 +100,25 @@ function LoginPage() {
 
                 const userId = data?.session?.user?.id;
                 if (userId) {
-                    go(userId);
+                    const { data: prof } = await supabase
+                        .from("profiles")
+                        .select("is_banned, is_admin")
+                        .eq("user_id", userId)
+                        .maybeSingle();
+
+                    if (prof?.is_banned) {
+                        await supabase.auth.signOut();
+                        setError("Your account has been banned. Please contact support.");
+                        setPageState("ready");
+                        return;
+                    }
+
+                    setPageState("redirecting");
+                    if (prof?.is_admin) {
+                        navigate("/admin/dashboard", { replace: true });
+                    } else {
+                        navigate("/home", { replace: true });
+                    }
                     return;
                 }
 
@@ -140,7 +132,7 @@ function LoginPage() {
 
         const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
             const userId = session?.user?.id;
-            if (userId) go(userId);
+            if (userId) check();
         });
 
         return () => {
@@ -201,20 +193,30 @@ function LoginPage() {
 
             const u = data?.user;
             if (u?.id) {
-                const metaFirst =
-                    u.user_metadata?.first_name ||
-                    (u.user_metadata?.full_name || "").split(" ").slice(0, -1).join(" ") ||
-                    "";
-                const metaLast =
-                    u.user_metadata?.last_name ||
-                    (u.user_metadata?.full_name || "").split(" ").slice(-1).join(" ") ||
-                    "";
-                const metaPhone = u.user_metadata?.phone || "";
+                const { data: prof, error: profError } = await supabase
+                    .from("profiles")
+                    .select("is_banned, is_admin")
+                    .eq("user_id", u.id)
+                    .maybeSingle();
 
-                await upsertProfile(u.id, metaFirst, metaLast, metaPhone);
+                if (prof?.is_banned) {
+                    await supabase.auth.signOut();
+                    throw new Error("Your account has been banned. Please contact support.");
+                }
+
+                if (!prof && !profError) {
+                    const metaFirst = u.user_metadata?.first_name || (u.user_metadata?.full_name || "").split(" ").slice(0, -1).join(" ") || "";
+                    const metaLast = u.user_metadata?.last_name || (u.user_metadata?.full_name || "").split(" ").slice(-1).join(" ") || "";
+                    const metaPhone = u.user_metadata?.phone || "";
+                    await upsertProfile(u.id, metaFirst, metaLast, metaPhone);
+                }
 
                 setPageState("redirecting");
-                redirectByRoleSafe(u.id);
+                if (prof?.is_admin) {
+                    navigate("/admin/dashboard", { replace: true });
+                } else {
+                    navigate("/home", { replace: true });
+                }
             }
         } catch (err) {
             setError(err.message || "Login failed.");
@@ -370,7 +372,9 @@ function LoginPage() {
             if (data?.user?.id) {
                 await upsertProfile(data.user.id, first, last, formattedPhone);
                 setPageState("redirecting");
-                redirectByRoleSafe(data.user.id);
+                const { data: prof } = await supabase.from("profiles").select("is_admin").eq("user_id", data.user.id).single();
+                if (prof?.is_admin) navigate("/admin/dashboard", { replace: true });
+                else navigate("/home", { replace: true });
             }
         } catch (err) {
             setError(err.message || "Register failed.");
@@ -522,7 +526,7 @@ function LoginPage() {
                             alt="Crispy Pata"
                             className="w-full h-full object-cover opacity-60"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
+                        <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/40 to-transparent" />
                     </div>
                     <div className="relative z-10 p-12 flex flex-col h-full justify-between text-white">
                         <div>

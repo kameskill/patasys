@@ -123,7 +123,7 @@ function Home() {
         }));
     };
 
-    const fetchNotifications = async (userId) => {
+    const fetchNotificationsManual = async (userId) => {
         try {
             const { data, error } = await supabase
                 .from("notifications")
@@ -131,10 +131,7 @@ function Home() {
                 .eq("user_id", userId)
                 .order("created_at", { ascending: false });
 
-            if (error) {
-                console.error("Fetch Notifications Error:", error.message);
-                return;
-            }
+            if (error) return;
 
             if (!data || data.length === 0) {
                 const welcomeNotif = {
@@ -160,9 +157,133 @@ function Home() {
                 setUnreadCount(data.filter((n) => !n.is_read).length);
             }
         } catch (err) {
-            console.error("Unexpected notification error:", err);
+            // Error caught silently
         }
     };
+
+    useEffect(() => {
+        const loadInitialData = async () => {
+            const { data: { user: u } } = await supabase.auth.getUser();
+            if (!u) {
+                navigate("/login");
+                return;
+            }
+            setUser(u);
+
+            const { data: prof, error: profError } = await supabase
+                .from("profiles")
+                .select("full_name, phone, cart_data, is_admin, is_blocked, is_banned")
+                .eq("user_id", u.id)
+                .maybeSingle();
+
+            if (prof?.is_banned) {
+                await supabase.auth.signOut();
+                navigate("/");
+                return;
+            }
+            if (prof?.is_admin) {
+                navigate("/admin/dashboard", { replace: true });
+                return;
+            }
+
+            if (!prof && !profError) {
+                const fullName = getFullNameFromUser(u);
+                await supabase.from("profiles").insert([{
+                    user_id: u.id,
+                    full_name: fullName,
+                    phone: u.user_metadata?.phone || "",
+                    cart_data: [],
+                    is_blocked: false,
+                    is_banned: false
+                }]);
+            } else if (prof) {
+                setProfile({
+                    full_name: prof.full_name || "",
+                    phone: prof.phone || "",
+                    is_blocked: prof.is_blocked || false,
+                });
+                setEditProfile({
+                    full_name: prof.full_name || "",
+                    phone: (prof.phone || "").replace("+63", "")
+                });
+                fillCheckoutFromProfile(prof);
+                if (prof.cart_data && Array.isArray(prof.cart_data) && prof.cart_data.length > 0) {
+                    setCart(prof.cart_data);
+                }
+            }
+            setIsProfileLoaded(true);
+            setLoadingProfile(false);
+
+            setLoadingMenu(true);
+            const { data: menuData } = await supabase.from("menu_items").select("*").order("id", { ascending: true });
+            if (menuData) setMenu(menuData);
+            setLoadingMenu(false);
+
+            const { data: orderData } = await supabase.from("orders").select("*").eq("user_id", u.id).order("created_at", { ascending: false });
+            if (orderData) setOrders(orderData);
+            await fetchNotificationsManual(u.id);
+        };
+
+        loadInitialData();
+    }, [navigate, setCart]);
+
+    useEffect(() => {
+        if (!user?.id) return;
+
+        const channel = supabase.channel(`home_realtime_${user.id}`);
+
+        channel
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, (payload) => {
+                setMenu((prevMenu) => prevMenu.map((item) =>
+                    item.id === payload.new.id ? { ...item, ...payload.new } : item
+                ));
+            })
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload) => {
+                setNotifications((prev) => {
+                    if (prev.some(n => n.id === payload.new.id)) return prev;
+                    setUnreadCount(count => count + 1);
+                    return [payload.new, ...prev];
+                });
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `user_id=eq.${user.id}` }, (payload) => {
+                setOrders((prev) => prev.map((o) => (o.id === payload.new.id ? payload.new : o)));
+                fetchNotificationsManual(user.id);
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `user_id=eq.${user.id}` }, (payload) => {
+                if (payload.new.is_banned) {
+                    supabase.auth.signOut().then(() => navigate("/"));
+                    return;
+                }
+                if ('is_blocked' in payload.new) {
+                    setProfile(p => {
+                        if (payload.new.is_blocked === true && p.is_blocked === false) {
+                            setError("Your account has been restricted from placing orders.");
+                        } else if (payload.new.is_blocked === false && p.is_blocked === true) {
+                            setSuccess("Your account restriction has been lifted!");
+                        }
+                        return { ...p, is_blocked: payload.new.is_blocked };
+                    });
+                }
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [user?.id, navigate]);
+
+    useEffect(() => {
+        if (!user || !isProfileLoaded) return;
+        const timer = setTimeout(async () => {
+            try {
+                await supabase.from("profiles").update({ cart_data: itemsPayload }).eq("user_id", user.id);
+            } catch (err) {
+                // Cart sync error silenced
+            }
+        }, 2000);
+        return () => clearTimeout(timer);
+    }, [itemsPayload, user, isProfileLoaded]);
+
 
     const markAsRead = async (notifId) => {
         try {
@@ -175,13 +296,10 @@ function Home() {
             );
 
             if (notifId && !String(notifId).startsWith("temp-")) {
-                await supabase
-                    .from("notifications")
-                    .update({ is_read: true })
-                    .eq("id", notifId);
+                await supabase.from("notifications").update({ is_read: true }).eq("id", notifId);
             }
         } catch (error) {
-            console.error("Error marking notification as read:", error);
+            // Error caught silently
         }
     };
 
@@ -194,150 +312,8 @@ function Home() {
         const ids = notifications.filter(n => !n.is_read && !String(n.id).startsWith("temp-")).map(n => n.id);
 
         if (ids.length > 0) {
-            await supabase
-                .from("notifications")
-                .update({ is_read: true })
-                .in("id", ids);
+            await supabase.from("notifications").update({ is_read: true }).in("id", ids);
         }
-    };
-
-    useEffect(() => {
-        if (!user || !isProfileLoaded) return;
-        const timer = setTimeout(async () => {
-            try {
-                await supabase
-                    .from("profiles")
-                    .update({ cart_data: itemsPayload })
-                    .eq("user_id", user.id);
-            } catch (err) {
-                console.error("Cart sync error:", err);
-            }
-        }, 2000);
-        return () => clearTimeout(timer);
-    }, [itemsPayload, user, isProfileLoaded]);
-
-    const ensureProfile = async (u) => {
-        const { data } = await supabase.from("profiles").select("user_id").eq("user_id", u.id).maybeSingle();
-        if (data) return;
-        const fullName = getFullNameFromUser(u);
-        await supabase.from("profiles").insert([{
-            user_id: u.id,
-            full_name: fullName,
-            phone: u.user_metadata?.phone || "",
-            cart_data: [],
-            is_blocked: false
-        }]);
-    };
-
-    const fetchProfile = async (u) => {
-        setLoadingProfile(true);
-        const { data, error } = await supabase
-            .from("profiles")
-            .select("full_name, phone, cart_data, is_admin, is_blocked")
-            .eq("user_id", u.id)
-            .maybeSingle();
-
-        if (error) {
-            console.error(error);
-            setIsProfileLoaded(true);
-            setLoadingProfile(false);
-            return null;
-        }
-
-        if (data?.is_admin) {
-            navigate("/admin/dashboard", { replace: true });
-            return null;
-        }
-
-        const p = {
-            full_name: data?.full_name || "",
-            phone: data?.phone || "",
-            is_blocked: data?.is_blocked || false,
-        };
-
-        setProfile(p);
-
-        setEditProfile({
-            full_name: p.full_name,
-            phone: p.phone.replace("+63", "")
-        });
-
-        fillCheckoutFromProfile(p);
-
-        if (data?.cart_data && Array.isArray(data.cart_data) && data.cart_data.length > 0) {
-            setCart(data.cart_data);
-        }
-
-        setIsProfileLoaded(true);
-        setLoadingProfile(false);
-        return p;
-    };
-
-    const fetchMenu = async (showLoadingState = false) => {
-        if (showLoadingState) setLoadingMenu(true);
-        const { data } = await supabase.from("menu_items").select("*").order("id", { ascending: true });
-        if (data) setMenu(data);
-        if (showLoadingState) setLoadingMenu(false);
-    };
-
-    useEffect(() => {
-        const init = async () => {
-            const { data: { user: u } } = await supabase.auth.getUser();
-            if (!u) {
-                navigate("/login");
-                return;
-            }
-            setUser(u);
-            await ensureProfile(u);
-            await fetchProfile(u);
-            await fetchNotifications(u.id);
-            await fetchMenu(true);
-
-            const channel = supabase
-                .channel('user_realtime_events')
-                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${u.id}` }, (payload) => {
-                    setNotifications((prev) => {
-                        if (prev.some(n => n.id === payload.new.id)) return prev;
-                        setUnreadCount(count => count + 1);
-                        return [payload.new, ...prev];
-                    });
-                })
-                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `user_id=eq.${u.id}` }, (payload) => {
-                    const newOrder = payload.new;
-                    const oldOrder = payload.old;
-                    if (newOrder.status !== oldOrder.status) {
-                        setOrders((prev) => prev.map((o) => (o.id === newOrder.id ? newOrder : o)));
-                    }
-                })
-                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `user_id=eq.${u.id}` }, (payload) => {
-                    if (payload.new.is_blocked !== payload.old.is_blocked) {
-                        setProfile(p => ({ ...p, is_blocked: payload.new.is_blocked }));
-                        if (payload.new.is_blocked) {
-                            setError("Your account has been restricted from placing orders.");
-                        } else {
-                            setSuccess("Your account restriction has been lifted!");
-                        }
-                    }
-                })
-                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'menu_items' }, (payload) => {
-                    setMenu((prevMenu) => prevMenu.map((item) =>
-                        item.id === payload.new.id ? { ...item, ...payload.new } : item
-                    ));
-                })
-                .subscribe();
-
-            return () => {
-                supabase.removeChannel(channel);
-            };
-        };
-        init();
-    }, [navigate, setCart]);
-
-    const fetchOrders = async () => {
-        setLoadingOrders(true);
-        const { data } = await supabase.from("orders").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
-        setOrders(data || []);
-        setLoadingOrders(false);
     };
 
     const logout = async () => {
@@ -350,13 +326,14 @@ function Home() {
         setActive(id);
         window.scrollTo({ top: 0, behavior: 'smooth' });
 
-        if (id === "orders") await fetchOrders();
+        if (id === "orders") {
+            setLoadingOrders(true);
+            const { data } = await supabase.from("orders").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+            setOrders(data || []);
+            setLoadingOrders(false);
+        }
         if (id === "cart") {
             fillCheckoutFromProfile(profile);
-            fetchMenu(false);
-        }
-        if (id === "menu") {
-            fetchMenu(false);
         }
     };
 
@@ -380,7 +357,6 @@ function Home() {
             setProfile(prev => ({ ...prev, full_name: editProfile.full_name.trim(), phone: formattedPhone }));
             setSuccess("Profile updated successfully.");
         } catch (err) {
-            console.error(err);
             setError("Failed to update profile.");
         } finally {
             setIsSavingProfile(false);
@@ -421,7 +397,9 @@ function Home() {
 
             if (unavailableItems.length > 0) {
                 setPlacing(false);
-                fetchMenu(false);
+                const { data } = await supabase.from("menu_items").select("*").order("id", { ascending: true });
+                if (data) setMenu(data);
+
                 return setError(`Cannot proceed. The following items are currently Sold Out: ${unavailableItems.join(", ")}. Please remove them from your cart.`);
             }
 
@@ -476,10 +454,11 @@ function Home() {
             setSuccess("Order placed successfully!");
             clearCart();
             setActive("orders");
-            await fetchOrders();
+
+            const { data: orderData } = await supabase.from("orders").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+            if (orderData) setOrders(orderData);
 
         } catch (err) {
-            console.error(err);
             setError(err.message || "Checkout failed. Please try again.");
             setPlacing(false);
         }
@@ -507,7 +486,8 @@ function Home() {
 
             if (currentOrder.status !== 'pending') {
                 setError("Cannot cancel. The kitchen is already preparing this order.");
-                await fetchOrders();
+                const { data } = await supabase.from("orders").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+                setOrders(data || []);
                 return;
             }
 
@@ -516,10 +496,7 @@ function Home() {
                 .update({ status: 'cancelled' })
                 .eq('id', orderToCancel);
 
-            if (updateError) {
-                if (updateError.code === "42501") throw new Error("Permission denied. Database policy prevents update.");
-                throw updateError;
-            }
+            if (updateError) throw updateError;
 
             const newNotif = {
                 user_id: user.id,
@@ -536,10 +513,10 @@ function Home() {
             }
 
             setSuccess("Order cancelled successfully.");
-            await fetchOrders();
+            const { data: orderData } = await supabase.from("orders").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+            if (orderData) setOrders(orderData);
 
         } catch (err) {
-            console.error("Cancel Error:", err);
             setError(err.message || "Failed to cancel order.");
         } finally {
             setCancellingId(null);
@@ -676,7 +653,7 @@ function Home() {
                             <div className="grid grid-cols-1 gap-4">
                                 <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex flex-col justify-center">
                                     <div className="flex justify-between items-center mb-1">
-                                        <span className="block text-gray-400 text-[10px] font-bold uppercase tracking-wider">Payment Method</span>
+                                        <span className="block text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-1">Payment Method</span>
                                         <span className="font-bold uppercase text-xs text-gray-700">{selectedOrder.payment_method}</span>
                                     </div>
                                     <div className="flex justify-between items-end mt-2 pt-2 border-t border-gray-200">
@@ -688,7 +665,7 @@ function Home() {
 
                             {selectedOrder.notes && (
                                 <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-xl text-sm text-yellow-800">
-                                    <span className="font-bold block mb-1 flex items-center gap-2"><i className="fa-regular fa-comment-dots"></i> Special Instructions:</span>
+                                    <span className="font-bold mb-1 flex items-center gap-2"><i className="fa-regular fa-comment-dots"></i> Special Instructions:</span>
                                     <p className="italic">{selectedOrder.notes}</p>
                                 </div>
                             )}
@@ -700,7 +677,7 @@ function Home() {
                 </div>
             )}
 
-            <header className="bg-white border-b border-gray-200 sticky top-0 z-40 w-full backdrop-blur-md bg-white/80 transition-all duration-200">
+            <header className="bg-white border-b border-gray-200 sticky top-0 z-40 w-full backdrop-blur-md transition-all duration-200">
                 <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between relative">
                     <div className="flex items-center gap-2 cursor-pointer" onClick={() => setTab("menu")}>
                         <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Crispy Pata sa A.Luna</h1>
@@ -1086,7 +1063,7 @@ function Home() {
                                         </div>
                                     </div>
                                     <div className="md:col-span-2">
-                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block flex items-center gap-2">
+                                        <label className="text-sm font-bold text-gray-700 mb-1.5 flex items-center gap-2">
                                             Email Address <span className="text-[10px] font-normal bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Cannot be changed</span>
                                         </label>
                                         <div className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-500 font-medium cursor-not-allowed truncate">
@@ -1118,7 +1095,7 @@ function Home() {
                 )}
             </main>
         </div>
-    ); 
+    );
 }
 
 export default Home;

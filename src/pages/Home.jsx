@@ -55,6 +55,12 @@ function Home() {
         is_blocked: false,
     });
 
+    const [editProfile, setEditProfile] = useState({
+        full_name: "",
+        phone: ""
+    });
+    const [isSavingProfile, setIsSavingProfile] = useState(false);
+
     const [loadingProfile, setLoadingProfile] = useState(true);
     const [isProfileLoaded, setIsProfileLoaded] = useState(false);
 
@@ -66,6 +72,8 @@ function Home() {
 
     const setError = (text) => setMsg({ type: "error", text });
     const setSuccess = (text) => setMsg({ type: "success", text });
+
+    const cleanPhone10 = (v) => String(v || "").replace(/\D/g, "").slice(0, 10);
 
     const menuImageMap = useMemo(() => {
         const map = {};
@@ -111,7 +119,7 @@ function Home() {
     const fillCheckoutFromProfile = (p) => {
         setCheckout((prev) => ({
             ...prev,
-            phone: prev.phone?.trim() ? prev.phone : p.phone || "",
+            phone: prev.phone?.trim() ? prev.phone : p.phone?.replace("+63", "") || "",
         }));
     };
 
@@ -132,7 +140,7 @@ function Home() {
                 const welcomeNotif = {
                     id: "temp-" + Date.now(),
                     user_id: userId,
-                    title: "Welcome to A.Luna! 🎉",
+                    title: "Welcome to A.Luna!",
                     message: "We're glad you're here. Browse our menu and place your first crispy pata order today!",
                     is_read: false,
                     created_at: new Date().toISOString()
@@ -248,6 +256,12 @@ function Home() {
         };
 
         setProfile(p);
+
+        setEditProfile({
+            full_name: p.full_name,
+            phone: p.phone.replace("+63", "")
+        });
+
         fillCheckoutFromProfile(p);
 
         if (data?.cart_data && Array.isArray(data.cart_data) && data.cart_data.length > 0) {
@@ -257,6 +271,13 @@ function Home() {
         setIsProfileLoaded(true);
         setLoadingProfile(false);
         return p;
+    };
+
+    const fetchMenu = async (showLoadingState = false) => {
+        if (showLoadingState) setLoadingMenu(true);
+        const { data } = await supabase.from("menu_items").select("*").order("id", { ascending: true });
+        if (data) setMenu(data);
+        if (showLoadingState) setLoadingMenu(false);
     };
 
     useEffect(() => {
@@ -270,6 +291,7 @@ function Home() {
             await ensureProfile(u);
             await fetchProfile(u);
             await fetchNotifications(u.id);
+            await fetchMenu(true);
 
             const channel = supabase
                 .channel('user_realtime_events')
@@ -285,7 +307,6 @@ function Home() {
                     const oldOrder = payload.old;
                     if (newOrder.status !== oldOrder.status) {
                         setOrders((prev) => prev.map((o) => (o.id === newOrder.id ? newOrder : o)));
-                        setSuccess(`Order #${String(newOrder.id).slice(0, 6)} is now ${newOrder.status.toUpperCase()}!`);
                     }
                 })
                 .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `user_id=eq.${u.id}` }, (payload) => {
@@ -298,6 +319,11 @@ function Home() {
                         }
                     }
                 })
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'menu_items' }, (payload) => {
+                    setMenu((prevMenu) => prevMenu.map((item) =>
+                        item.id === payload.new.id ? { ...item, ...payload.new } : item
+                    ));
+                })
                 .subscribe();
 
             return () => {
@@ -306,16 +332,6 @@ function Home() {
         };
         init();
     }, [navigate, setCart]);
-
-    useEffect(() => {
-        const fetchMenu = async () => {
-            setLoadingMenu(true);
-            const { data } = await supabase.from("menu_items").select("*").order("id", { ascending: true });
-            setMenu(data || []);
-            setLoadingMenu(false);
-        };
-        fetchMenu();
-    }, []);
 
     const fetchOrders = async () => {
         setLoadingOrders(true);
@@ -333,8 +349,47 @@ function Home() {
         setMsg({ type: "", text: "" });
         setActive(id);
         window.scrollTo({ top: 0, behavior: 'smooth' });
+
         if (id === "orders") await fetchOrders();
-        if (id === "cart") fillCheckoutFromProfile(profile);
+        if (id === "cart") {
+            fillCheckoutFromProfile(profile);
+            fetchMenu(false);
+        }
+        if (id === "menu") {
+            fetchMenu(false);
+        }
+    };
+
+    const handleSaveProfile = async () => {
+        if (!editProfile.full_name.trim()) return setError("Name cannot be empty.");
+        if (editProfile.phone.length !== 10 || !editProfile.phone.startsWith("9")) {
+            return setError("Phone must be exactly 10 digits and start with 9.");
+        }
+
+        setIsSavingProfile(true);
+        const formattedPhone = "+63" + editProfile.phone;
+
+        try {
+            const { error } = await supabase
+                .from("profiles")
+                .update({ full_name: editProfile.full_name.trim(), phone: formattedPhone })
+                .eq("user_id", user.id);
+
+            if (error) throw error;
+
+            setProfile(prev => ({ ...prev, full_name: editProfile.full_name.trim(), phone: formattedPhone }));
+            setSuccess("Profile updated successfully.");
+        } catch (err) {
+            console.error(err);
+            setError("Failed to update profile.");
+        } finally {
+            setIsSavingProfile(false);
+        }
+    };
+
+    const hasProfileChanges = () => {
+        const cleanSavedPhone = profile.phone.replace("+63", "");
+        return editProfile.full_name !== profile.full_name || editProfile.phone !== cleanSavedPhone;
     };
 
     const placeOrder = async () => {
@@ -343,29 +398,47 @@ function Home() {
         if (profile.is_blocked) {
             return setError("Your account is restricted. You cannot place orders at this time.");
         }
-
-        const unavailableItems = cart.filter(cartItem => {
-            const menuItem = menu.find(m => m.id === cartItem.id);
-            return menuItem && !menuItem.is_available;
-        });
-
-        if (unavailableItems.length > 0) {
-            const names = unavailableItems.map(item => item.name).join(", ");
-            return setError(`Cannot checkout. The following items are currently unavailable: ${names}. Please remove them from your cart.`);
-        }
-
         if (cart.length === 0) return setError("Your cart is empty.");
 
-        const effective = {
-            phone: checkout.phone?.trim() ? checkout.phone : profile.phone,
-            notes: checkout.notes?.trim() ? checkout.notes : "",
-            payment: checkout.payment,
-        };
-
-        if (!effective.phone?.trim()) return setError("Please enter your phone number.");
-
         setPlacing(true);
+
         try {
+            const cartItemIds = cart.map(item => item.id);
+            const { data: liveMenuItems, error: menuError } = await supabase
+                .from("menu_items")
+                .select("id, name, is_available")
+                .in("id", cartItemIds);
+
+            if (menuError) throw new Error("Failed to verify item availability. Please try again.");
+
+            const unavailableItems = [];
+            for (const cartItem of cart) {
+                const liveItem = liveMenuItems?.find(m => m.id === cartItem.id);
+                if (!liveItem || !liveItem.is_available) {
+                    unavailableItems.push(cartItem.name);
+                }
+            }
+
+            if (unavailableItems.length > 0) {
+                setPlacing(false);
+                fetchMenu(false);
+                return setError(`Cannot proceed. The following items are currently Sold Out: ${unavailableItems.join(", ")}. Please remove them from your cart.`);
+            }
+
+            const cleanCheckoutPhone = cleanPhone10(checkout.phone);
+            if (cleanCheckoutPhone.length !== 10 || !cleanCheckoutPhone.startsWith("9")) {
+                setPlacing(false);
+                return setError("Please enter a valid 10-digit phone number starting with 9.");
+            }
+
+            const dbFormattedPhone = "+63" + cleanCheckoutPhone;
+
+            const effective = {
+                phone: dbFormattedPhone,
+                notes: checkout.notes?.trim() ? checkout.notes : "",
+                payment: checkout.payment,
+            };
+
             const { error } = await supabase.from("orders").insert([{
                 user_id: user.id,
                 items: itemsPayload,
@@ -378,6 +451,12 @@ function Home() {
             }]);
 
             if (error) throw error;
+
+            if (effective.phone !== profile.phone) {
+                await supabase.from("profiles").update({ phone: effective.phone }).eq("user_id", user.id);
+                setProfile(prev => ({ ...prev, phone: effective.phone }));
+                setEditProfile(prev => ({ ...prev, phone: cleanCheckoutPhone }));
+            }
 
             const newNotif = {
                 user_id: user.id,
@@ -398,10 +477,10 @@ function Home() {
             clearCart();
             setActive("orders");
             await fetchOrders();
+
         } catch (err) {
             console.error(err);
-            setError("Checkout failed. Please try again.");
-        } finally {
+            setError(err.message || "Checkout failed. Please try again.");
             setPlacing(false);
         }
     };
@@ -782,28 +861,36 @@ function Home() {
                                     </div>
                                 ) : (
                                     <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-                                        {cart.map((item, idx) => (
-                                            <div key={item.id} className={`p-4 md:p-6 flex gap-4 items-start ${idx !== cart.length - 1 ? "border-b border-gray-100" : ""}`}>
-                                                <div className="w-20 h-20 bg-gray-100 rounded-lg shrink-0 overflow-hidden">
-                                                    {item.image_url ? <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-gray-300"><i className="fa-solid fa-image"></i></div>}
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex justify-between items-start mb-1">
-                                                        <h4 className="font-bold text-gray-900 truncate pr-4">{item.name}</h4>
-                                                        <span className="font-bold text-gray-900">₱{Number(item.price) * Number(item.quantity)}</span>
+                                        {cart.map((item, idx) => {
+                                            const liveMenuItem = menu.find(m => m.id === item.id);
+                                            const isSoldOut = liveMenuItem ? !liveMenuItem.is_available : false;
+
+                                            return (
+                                                <div key={item.id} className={`p-4 md:p-6 flex gap-4 items-start ${idx !== cart.length - 1 ? "border-b border-gray-100" : ""} ${isSoldOut ? "bg-red-50/40 opacity-75" : ""}`}>
+                                                    <div className="w-20 h-20 bg-gray-100 rounded-lg shrink-0 overflow-hidden relative">
+                                                        {item.image_url ? <img src={item.image_url} alt={item.name} className={`w-full h-full object-cover ${isSoldOut ? "grayscale" : ""}`} /> : <div className="w-full h-full flex items-center justify-center text-gray-300"><i className="fa-solid fa-image"></i></div>}
                                                     </div>
-                                                    <p className="text-sm text-gray-500 mb-4">₱{item.price} each</p>
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-3 bg-gray-50 rounded-full p-1 border border-gray-200">
-                                                            <button onClick={() => decreaseQty(item.id)} disabled={item.quantity <= 1} className="w-8 h-8 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center text-gray-600 hover:text-black disabled:opacity-50 cursor-pointer"><i className="fa-solid fa-minus text-xs"></i></button>
-                                                            <span className="text-sm font-bold w-4 text-center">{item.quantity}</span>
-                                                            <button onClick={() => increaseQty(item.id)} className="w-8 h-8 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center text-gray-600 hover:text-black cursor-pointer"><i className="fa-solid fa-plus text-xs"></i></button>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex justify-between items-start mb-1">
+                                                            <h4 className="font-bold text-gray-900 truncate pr-4">
+                                                                {item.name}
+                                                                {isSoldOut && <span className="ml-2 inline-block px-2 py-0.5 rounded-md bg-red-100 text-red-700 text-[10px] font-black uppercase tracking-wider border border-red-200">Sold Out</span>}
+                                                            </h4>
+                                                            <span className="font-bold text-gray-900">₱{Number(item.price) * Number(item.quantity)}</span>
                                                         </div>
-                                                        <button onClick={() => removeFromCart(item.id)} className="text-xs font-semibold text-gray-400 hover:text-red-600 underline transition cursor-pointer">Remove</button>
+                                                        <p className="text-sm text-gray-500 mb-4">₱{item.price} each</p>
+                                                        <div className="flex items-center justify-between">
+                                                            <div className={`flex items-center gap-3 bg-gray-50 rounded-full p-1 border border-gray-200 ${isSoldOut ? "opacity-50 pointer-events-none" : ""}`}>
+                                                                <button onClick={() => decreaseQty(item.id)} disabled={item.quantity <= 1 || isSoldOut} className="w-8 h-8 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center text-gray-600 hover:text-black disabled:opacity-50 cursor-pointer"><i className="fa-solid fa-minus text-xs"></i></button>
+                                                                <span className="text-sm font-bold w-4 text-center">{item.quantity}</span>
+                                                                <button onClick={() => increaseQty(item.id)} disabled={isSoldOut} className="w-8 h-8 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center text-gray-600 hover:text-black cursor-pointer disabled:opacity-50"><i className="fa-solid fa-plus text-xs"></i></button>
+                                                            </div>
+                                                            <button onClick={() => removeFromCart(item.id)} className="text-xs font-semibold text-gray-400 hover:text-red-600 underline transition cursor-pointer">Remove</button>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                         <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end"><button onClick={clearCart} className="text-xs font-semibold text-red-600 hover:text-red-700 cursor-pointer">Clear All Items</button></div>
                                     </div>
                                 )}
@@ -827,7 +914,18 @@ function Home() {
                                         </div>
                                         <div>
                                             <label className="text-sm font-semibold text-gray-700 mb-1.5 block">Contact Number</label>
-                                            <input value={checkout.phone} onChange={(e) => setCheckout((p) => ({ ...p, phone: e.target.value }))} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-black focus:border-transparent transition-all outline-none" placeholder="09xx xxx xxxx" />
+                                            <div className="flex shadow-sm rounded-lg">
+                                                <span className="inline-flex items-center px-3 text-sm text-gray-500 bg-gray-50 border border-r-0 border-gray-200 rounded-l-lg">
+                                                    +63
+                                                </span>
+                                                <input
+                                                    value={checkout.phone}
+                                                    onChange={(e) => setCheckout((p) => ({ ...p, phone: cleanPhone10(e.target.value) }))}
+                                                    className="w-full bg-white border border-gray-200 rounded-r-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-black focus:border-transparent transition-all outline-none"
+                                                    placeholder="9XXXXXXXXX"
+                                                    maxLength={10}
+                                                />
+                                            </div>
                                         </div>
                                         <div>
                                             <label className="text-sm font-semibold text-gray-700 mb-1.5 block">Special Instructions</label>
@@ -932,7 +1030,18 @@ function Home() {
 
                 {active === "profile" && (
                     <div className="max-w-2xl mx-auto animate-[fadeIn_0.3s_ease-out]">
-                        <h2 className="text-3xl font-bold mb-6">Your Profile</h2>
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-3xl font-bold">Your Profile</h2>
+                            {hasProfileChanges() && (
+                                <button
+                                    onClick={handleSaveProfile}
+                                    disabled={isSavingProfile}
+                                    className="px-5 py-2 bg-black text-white text-sm font-bold rounded-full shadow-md hover:bg-gray-800 transition active:scale-95 cursor-pointer disabled:opacity-50"
+                                >
+                                    {isSavingProfile ? "Saving..." : "Save Changes"}
+                                </button>
+                            )}
+                        </div>
                         <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm mb-6 relative overflow-hidden">
                             <div className="absolute top-0 right-0 bg-gray-100 border-b border-l border-gray-200 text-gray-500 text-xs font-bold px-3 py-1.5 rounded-bl-xl flex items-center gap-1.5 shadow-sm">
                                 <i className="fa-solid fa-lock text-[10px]"></i> Secured
@@ -952,23 +1061,39 @@ function Home() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                     <div>
                                         <label className="text-sm font-bold text-gray-700 mb-1.5 block">Full Name</label>
-                                        <div className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-500 font-medium cursor-not-allowed">
-                                            {profile.full_name || "Not provided"}
-                                        </div>
+                                        <input
+                                            type="text"
+                                            value={editProfile.full_name}
+                                            onChange={(e) => setEditProfile(p => ({ ...p, full_name: e.target.value }))}
+                                            className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-900 font-medium focus:ring-2 focus:ring-black focus:border-transparent transition-all outline-none"
+                                            placeholder="Enter your full name"
+                                        />
                                     </div>
                                     <div>
-                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block">Email Address</label>
+                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block">Phone Number</label>
+                                        <div className="flex shadow-sm rounded-xl">
+                                            <span className="inline-flex items-center px-4 text-sm text-gray-600 bg-gray-50 border border-r-0 border-gray-300 rounded-l-xl font-medium">
+                                                +63
+                                            </span>
+                                            <input
+                                                type="tel"
+                                                value={editProfile.phone}
+                                                onChange={(e) => setEditProfile(p => ({ ...p, phone: cleanPhone10(e.target.value) }))}
+                                                className="w-full bg-white border border-gray-300 rounded-r-xl px-4 py-3 text-sm text-gray-900 font-medium focus:ring-2 focus:ring-black focus:border-transparent transition-all outline-none"
+                                                placeholder="9XXXXXXXXX"
+                                                maxLength={10}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="md:col-span-2">
+                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block flex items-center gap-2">
+                                            Email Address <span className="text-[10px] font-normal bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Cannot be changed</span>
+                                        </label>
                                         <div className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-500 font-medium cursor-not-allowed truncate">
                                             {user.email}
                                         </div>
                                     </div>
-                                    <div>
-                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block">Phone Number</label>
-                                        <div className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-500 font-medium cursor-not-allowed">
-                                            {profile.phone || "Not provided"}
-                                        </div>
-                                    </div>
-                                    <div>
+                                    <div className="md:col-span-2">
                                         <label className="text-sm font-bold text-gray-700 mb-1.5 block">Account Status</label>
                                         {profile.is_blocked ? (
                                             <div className="w-full bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 font-bold flex items-center gap-2 cursor-not-allowed">
@@ -981,17 +1106,10 @@ function Home() {
                                         )}
                                     </div>
                                 </div>
-
-                                <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-100 rounded-xl mt-4">
-                                    <i className="fa-solid fa-circle-info text-blue-600 mt-0.5"></i>
-                                    <p className="text-xs text-blue-800 leading-relaxed font-medium">
-                                        For security purposes, your personal details are locked. If you need to update your phone number or email, please contact customer support or ask the admin in-store.
-                                    </p>
-                                </div>
                             </div>
 
                             <div className="flex items-center gap-3 mt-8 pt-6 border-t border-gray-100">
-                                <button onClick={() => setShowLogoutModal(true)} className="px-8 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-full shadow-md transition-all active:scale-[0.98] cursor-pointer">
+                                <button onClick={() => setShowLogoutModal(true)} className="px-8 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-sm rounded-full transition-all active:scale-[0.98] cursor-pointer">
                                     Log Out
                                 </button>
                             </div>
@@ -1000,7 +1118,7 @@ function Home() {
                 )}
             </main>
         </div>
-    );
+    ); 
 }
 
 export default Home;

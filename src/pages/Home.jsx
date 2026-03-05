@@ -81,6 +81,7 @@ function Home() {
     const setSuccess = (text) => setMsg({ type: "success", text });
 
     const cleanPhone10 = (v) => String(v || "").replace(/\D/g, "").slice(0, 10);
+    const fmtMoney = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     const menuImageMap = useMemo(() => {
         const map = {};
@@ -287,6 +288,7 @@ function Home() {
         return () => clearTimeout(timer);
     }, [itemsPayload, user, isProfileLoaded]);
 
+
     const markAsRead = async (notifId) => {
         try {
             const targetNotif = notifications.find(n => n.id === notifId);
@@ -480,7 +482,7 @@ function Home() {
             const newNotif = {
                 user_id: user.id,
                 title: "Order Placed",
-                message: `Thank you for your order! Your total is ₱${totalPrice}. We are now reviewing it.`,
+                message: `Thank you for your order! Your total is ₱${fmtMoney(totalPrice)}. We are now reviewing it.`,
                 is_read: false
             };
 
@@ -894,9 +896,9 @@ function Home() {
                                                                 {item.name}
                                                                 {isSoldOut && <span className="ml-2 inline-block px-2 py-0.5 rounded-md bg-red-100 text-red-700 text-[10px] font-black uppercase tracking-wider border border-red-200">Sold Out</span>}
                                                             </h4>
-                                                            <span className="font-bold text-gray-900">₱{Number(item.price) * Number(item.quantity)}</span>
+                                                            <span className="font-bold text-gray-900">₱{fmtMoney(Number(item.price) * Number(item.quantity))}</span>
                                                         </div>
-                                                        <p className="text-sm text-gray-500 mb-4">₱{item.price} each</p>
+                                                        <p className="text-sm text-gray-500 mb-4">₱{fmtMoney(item.price)} each</p>
                                                         <div className="flex items-center justify-between">
                                                             <div className={`flex items-center gap-3 bg-gray-50 rounded-full p-1 border border-gray-200 ${isSoldOut ? "opacity-50 pointer-events-none" : ""}`}>
                                                                 <button onClick={() => decreaseQty(item.id)} disabled={item.quantity <= 1 || isSoldOut} className="w-8 h-8 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center text-gray-600 hover:text-black disabled:opacity-50 cursor-pointer"><i className="fa-solid fa-minus text-xs"></i></button>
@@ -952,7 +954,7 @@ function Home() {
                                             <textarea value={checkout.notes} onChange={(e) => setCheckout((p) => ({ ...p, notes: e.target.value }))} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-black focus:border-transparent transition-all outline-none resize-none" placeholder="e.g. Extra spicy sauce..." rows={2} />
                                         </div>
                                         <div className="border-t border-gray-100 pt-4 mt-2">
-                                            <div className="flex justify-between items-end mb-4"><span className="text-gray-600">Total Amount</span><span className="text-3xl font-bold tracking-tight">₱{totalPrice}</span></div>
+                                            <div className="flex justify-between items-end mb-4"><span className="text-gray-600">Total Amount</span><span className="text-3xl font-bold tracking-tight">₱{fmtMoney(totalPrice)}</span></div>
                                             <button onClick={placeOrder} disabled={placing || cart.length === 0 || profile.is_blocked} className="w-full bg-black text-white py-3.5 rounded-full font-bold text-lg hover:bg-gray-800 hover:shadow-lg disabled:opacity-50 disabled:hover:shadow-none active:scale-[0.98] transition-all cursor-pointer">
                                                 {placing ? <span className="flex items-center justify-center gap-2"><i className="fa-solid fa-circle-notch animate-spin"></i> Processing...</span> : "Place Order"}
                                             </button>
@@ -989,7 +991,7 @@ function Home() {
                                                 <div className="flex items-center gap-2 mb-1"><span className="font-bold text-lg">#{String(o.id).slice(0, 8)}</span>{getStatusBadge(o.status)}</div>
                                                 <p className="text-xs text-gray-500 flex items-center gap-1"><i className="fa-regular fa-clock"></i>{new Date(o.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
                                             </div>
-                                            <span className="font-bold text-xl">₱{o.total}</span>
+                                            <span className="font-bold text-xl">₱{fmtMoney(o.total)}</span>
                                         </div>
                                         {orderTab === 'active' && o.status !== 'cancelled' && (
                                             <div className="px-5 py-4 bg-white border-b border-gray-50">

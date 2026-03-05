@@ -1,18 +1,28 @@
 import React, { useEffect, useState } from "react";
 import supabase from "../config/Client";
-import { useNavigate } from "react-router";
+import { useNavigate } from "react-router-dom";
 
 function ResetPasswordPage() {
     const navigate = useNavigate();
+
     const [pw, setPw] = useState("");
     const [confirm, setConfirm] = useState("");
     const [loading, setLoading] = useState(false);
+    const [showPw, setShowPw] = useState(false);
 
     const [status, setStatus] = useState({ type: "", text: "" });
     const setError = (text) => setStatus({ type: "error", text });
     const setSuccess = (text) => setStatus({ type: "success", text });
 
     const [hasRecoverySession, setHasRecoverySession] = useState(false);
+
+    const isValidPassword = (password) => {
+        const hasUpper = /[A-Z]/.test(password);
+        const hasNumber = /[0-9]/.test(password);
+        const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+        const isValidLength = password.length >= 8;
+        return hasUpper && hasNumber && hasSpecial && isValidLength;
+    };
 
     useEffect(() => {
         const { data: sub } = supabase.auth.onAuthStateChange((event) => {
@@ -33,16 +43,13 @@ function ResetPasswordPage() {
         setStatus({ type: "", text: "" });
 
         if (!hasRecoverySession) {
-            setError("Reset session missing. Please request a new reset link.");
-            return;
+            return setError("Reset session missing or expired. Please request a new reset link.");
         }
-        if (pw.length < 8) {
-            setError("Password must be at least 8 characters.");
-            return;
+        if (!isValidPassword(pw)) {
+            return setError("Password must be at least 8 characters, include an uppercase letter, a number, and a special character.");
         }
         if (pw !== confirm) {
-            setError("Passwords do not match.");
-            return;
+            return setError("Passwords do not match.");
         }
 
         setLoading(true);
@@ -50,8 +57,8 @@ function ResetPasswordPage() {
             const { error } = await supabase.auth.updateUser({ password: pw });
             if (error) throw error;
 
-            setSuccess("Password updated! Redirecting to login...");
-            setTimeout(() => navigate("/login"), 800);
+            setSuccess("Password updated successfully! Redirecting to login...");
+            setTimeout(() => navigate("/login"), 1500);
         } catch (err) {
             console.error(err);
             setError(err.message || "Failed to update password.");
@@ -61,61 +68,104 @@ function ResetPasswordPage() {
     };
 
     return (
-        <div className="min-h-screen grid place-items-center p-4 bg-black/40">
-            <div className="w-full max-w-md bg-white rounded-xl border border-gray-200 p-6 shadow-xl">
-                <h1 className="text-2xl font-bold">Set New Password</h1>
-                <p className="text-sm text-gray-600 mt-1">
-                    Create a new password for your account.
-                </p>
+        <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50 font-sans selection:bg-black selection:text-white">
+            <div className="w-full max-w-md bg-white rounded-2xl border border-gray-200 p-8 shadow-xl">
+
+                <div className="text-center mb-8">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i className="fa-solid fa-lock text-gray-900 text-2xl"></i>
+                    </div>
+                    <h1 className="text-2xl font-bold text-gray-900">Set New Password</h1>
+                    <p className="text-sm text-gray-500 mt-2">
+                        Create a new, strong password for your account.
+                    </p>
+                </div>
 
                 {!hasRecoverySession && (
-                    <div className="mt-4 rounded-md border border-red-300 bg-red-50 text-red-700 p-3 text-sm">
-                        Reset session missing or link expired. Please request a new reset link.
+                    <div className="mb-6 p-4 rounded-xl border border-red-200 bg-red-50 flex items-start gap-3 text-red-800">
+                        <i className="fa-solid fa-circle-exclamation mt-0.5"></i>
+                        <p className="text-sm font-medium">Reset session missing or link expired. Please request a new password reset link.</p>
                     </div>
                 )}
 
                 {status.text && (
                     <div
-                        className={[
-                            "mt-4 rounded-md border p-3 text-sm",
-                            status.type === "error"
-                                ? "border-red-300 bg-red-50 text-red-700"
-                                : "border-green-300 bg-green-50 text-green-700",
-                        ].join(" ")}
+                        className={`p-4 mb-6 text-sm rounded-xl flex items-start gap-3 ${status.type === "error"
+                                ? "text-red-800 bg-red-50 border border-red-100"
+                                : "text-green-800 bg-green-50 border border-green-100"
+                            }`}
+                        role="alert"
                     >
-                        {status.text}
+                        <i className={`fa-solid ${status.type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check'} mt-0.5`}></i>
+                        <span className="font-medium">{status.text}</span>
                     </div>
                 )}
 
-                <form onSubmit={updatePw} className="mt-5 flex flex-col gap-3">
-                    <input
-                        className="w-full border border-gray-300 rounded-md p-2.5 focus:outline-none focus:ring-2 focus:ring-black/20"
-                        type="password"
-                        placeholder="New password"
-                        required
-                        value={pw}
-                        onChange={(e) => setPw(e.target.value)}
-                    />
-                    <input
-                        className="w-full border border-gray-300 rounded-md p-2.5 focus:outline-none focus:ring-2 focus:ring-black/20"
-                        type="password"
-                        placeholder="Confirm new password"
-                        required
-                        value={confirm}
-                        onChange={(e) => setConfirm(e.target.value)}
-                    />
+                <form onSubmit={updatePw} className="space-y-5">
+                    <div>
+                        <label className="block mb-2 text-sm font-bold text-gray-700">
+                            New Password
+                        </label>
+                        <div className="relative">
+                            <input
+                                className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-black focus:border-transparent block p-3.5 pr-10 transition-colors outline-none"
+                                type={showPw ? "text" : "password"}
+                                placeholder="••••••••"
+                                required
+                                value={pw}
+                                onChange={(e) => setPw(e.target.value)}
+                            />
+                            <button
+                                type="button"
+                                className="absolute inset-y-0 right-0 flex items-center pr-4 text-gray-400 hover:text-gray-700 cursor-pointer transition-colors"
+                                onClick={() => setShowPw(!showPw)}
+                            >
+                                <i className={`fa-regular ${showPw ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                            </button>
+                        </div>
+                        <p className="mt-2 text-[11px] text-gray-500 font-medium">Min 8 chars, 1 uppercase, 1 number, 1 special char.</p>
+                    </div>
+
+                    <div>
+                        <label className="block mb-2 text-sm font-bold text-gray-700">
+                            Confirm New Password
+                        </label>
+                        <input
+                            className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-black focus:border-transparent block p-3.5 transition-colors outline-none"
+                            type={showPw ? "text" : "password"}
+                            placeholder="••••••••"
+                            required
+                            value={confirm}
+                            onChange={(e) => setConfirm(e.target.value)}
+                        />
+                    </div>
 
                     <button
-                        className="w-full bg-black text-white py-2.5 rounded font-semibold hover:bg-neutral-800 disabled:opacity-60"
+                        type="submit"
+                        className="w-full bg-black text-white py-3.5 rounded-xl font-bold text-base hover:bg-gray-800 disabled:opacity-50 transition-all cursor-pointer shadow-md active:scale-[0.99] mt-4"
                         disabled={loading || !hasRecoverySession}
                     >
-                        {loading ? "Updating..." : "Update password"}
+                        {loading ? (
+                            <span className="flex items-center justify-center gap-2">
+                                <i className="fa-solid fa-circle-notch animate-spin"></i> Updating...
+                            </span>
+                        ) : (
+                            "Update Password"
+                        )}
                     </button>
                 </form>
+
+                <div className="mt-6 text-center">
+                    <button
+                        onClick={() => navigate("/login")}
+                        className="text-sm font-semibold text-gray-500 hover:text-black transition-colors cursor-pointer"
+                    >
+                        Back to Login
+                    </button>
+                </div>
             </div>
         </div>
     );
 }
 
-
-export default ResetPasswordPage
+export default ResetPasswordPage;

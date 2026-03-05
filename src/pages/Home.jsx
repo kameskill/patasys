@@ -48,6 +48,7 @@ function Home() {
     const [selectedOrder, setSelectedOrder] = useState(null);
 
     const PICKUP_ADDRESS = "124 F.Vergel Concepcion Baliuag Bulacan (Pickup Only)";
+    const PHONE_NUMBER = "(+63) 913 456 7890";
 
     const [profile, setProfile] = useState({
         full_name: "",
@@ -69,6 +70,12 @@ function Home() {
         notes: "",
         payment: "pickup",
     });
+
+    const [currentPassword, setCurrentPassword] = useState("");
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmNewPassword, setConfirmNewPassword] = useState("");
+    const [isChangingPassword, setIsChangingPassword] = useState(false);
+    const [showPw, setShowPw] = useState(false);
 
     const setError = (text) => setMsg({ type: "error", text });
     const setSuccess = (text) => setMsg({ type: "success", text });
@@ -156,9 +163,7 @@ function Home() {
                 setNotifications(data);
                 setUnreadCount(data.filter((n) => !n.is_read).length);
             }
-        } catch (err) {
-            // Error caught silently
-        }
+        } catch (err) { }
     };
 
     useEffect(() => {
@@ -277,13 +282,10 @@ function Home() {
         const timer = setTimeout(async () => {
             try {
                 await supabase.from("profiles").update({ cart_data: itemsPayload }).eq("user_id", user.id);
-            } catch (err) {
-                // Cart sync error silenced
-            }
+            } catch (err) { }
         }, 2000);
         return () => clearTimeout(timer);
     }, [itemsPayload, user, isProfileLoaded]);
-
 
     const markAsRead = async (notifId) => {
         try {
@@ -298,9 +300,7 @@ function Home() {
             if (notifId && !String(notifId).startsWith("temp-")) {
                 await supabase.from("notifications").update({ is_read: true }).eq("id", notifId);
             }
-        } catch (error) {
-            // Error caught silently
-        }
+        } catch (error) { }
     };
 
     const markAllAsRead = async () => {
@@ -360,6 +360,47 @@ function Home() {
             setError("Failed to update profile.");
         } finally {
             setIsSavingProfile(false);
+        }
+    };
+
+    const handleChangePassword = async (e) => {
+        e.preventDefault();
+        setMsg({ type: "", text: "" });
+
+        if (newPassword !== confirmNewPassword) {
+            return setError("New passwords do not match.");
+        }
+        if (newPassword.length < 8) {
+            return setError("New password must be at least 8 characters long.");
+        }
+
+        setIsChangingPassword(true);
+
+        try {
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+                email: user.email,
+                password: currentPassword,
+            });
+
+            if (signInError) {
+                throw new Error("Incorrect current password.");
+            }
+
+            const { error: updateError } = await supabase.auth.updateUser({
+                password: newPassword
+            });
+
+            if (updateError) throw updateError;
+
+            setSuccess("Password updated successfully.");
+            setCurrentPassword("");
+            setNewPassword("");
+            setConfirmNewPassword("");
+            setShowPw(false);
+        } catch (err) {
+            setError(err.message || "Failed to update password.");
+        } finally {
+            setIsChangingPassword(false);
         }
     };
 
@@ -641,10 +682,10 @@ function Home() {
                                                 </div>
                                                 <div className="flex flex-col">
                                                     <span className="text-gray-900 font-bold leading-tight">{item.name}</span>
-                                                    <span className="text-xs text-gray-500 font-medium">Qty: {item.quantity} × ₱{item.price}</span>
+                                                    <span className="text-xs text-gray-500 font-medium">Qty: {item.quantity} × ₱{fmtMoney(item.price)}</span>
                                                 </div>
                                             </div>
-                                            <span className="text-gray-900 font-bold whitespace-nowrap">₱{item.price * item.quantity}</span>
+                                            <span className="text-gray-900 font-bold whitespace-nowrap">₱{fmtMoney(item.price * item.quantity)}</span>
                                         </div>
                                     );
                                 })}
@@ -658,14 +699,14 @@ function Home() {
                                     </div>
                                     <div className="flex justify-between items-end mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-gray-500 font-medium text-sm">Total Amount</span>
-                                        <span className="font-black text-xl text-black">₱{selectedOrder.total}</span>
+                                        <span className="font-black text-xl text-black">₱{fmtMoney(selectedOrder.total)}</span>
                                     </div>
                                 </div>
                             </div>
 
                             {selectedOrder.notes && (
                                 <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-xl text-sm text-yellow-800">
-                                    <span className="font-bold mb-1 flex items-center gap-2"><i className="fa-regular fa-comment-dots"></i> Special Instructions:</span>
+                                    <span className="font-bold block mb-1 flex items-center gap-2"><i className="fa-regular fa-comment-dots"></i> Special Instructions:</span>
                                     <p className="italic">{selectedOrder.notes}</p>
                                 </div>
                             )}
@@ -677,7 +718,7 @@ function Home() {
                 </div>
             )}
 
-            <header className="bg-white border-b border-gray-200 sticky top-0 z-40 w-full backdrop-blur-md transition-all duration-200">
+            <header className="bg-white border-b border-gray-200 sticky top-0 z-40 w-full backdrop-blur-md bg-white/80 transition-all duration-200">
                 <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between relative">
                     <div className="flex items-center gap-2 cursor-pointer" onClick={() => setTab("menu")}>
                         <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-gray-900">Crispy Pata sa A.Luna</h1>
@@ -879,6 +920,8 @@ function Home() {
                                         <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
                                             <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">Pickup Location</p>
                                             <p className="text-sm font-medium text-gray-900">{PICKUP_ADDRESS}</p>
+                                            <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1 mt-2">Phone Number</p>
+                                            <p className="text-sm font-medium text-gray-900">{PHONE_NUMBER}</p>
                                         </div>
                                         <div>
                                             <label className="text-sm font-semibold text-gray-700 mb-1.5 block">Payment Method</label>
@@ -1063,7 +1106,7 @@ function Home() {
                                         </div>
                                     </div>
                                     <div className="md:col-span-2">
-                                        <label className="text-sm font-bold text-gray-700 mb-1.5 flex items-center gap-2">
+                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block flex items-center gap-2">
                                             Email Address <span className="text-[10px] font-normal bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Cannot be changed</span>
                                         </label>
                                         <div className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-500 font-medium cursor-not-allowed truncate">
@@ -1081,6 +1124,54 @@ function Home() {
                                                 <i className="fa-solid fa-shield-check text-green-600"></i> Verified Account
                                             </div>
                                         )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-8 pt-6 border-t border-gray-100">
+                                <h3 className="text-lg font-bold text-gray-900 mb-4">Change Password</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div className="md:col-span-2 relative">
+                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block">Current Password</label>
+                                        <input
+                                            type={showPw ? "text" : "password"}
+                                            value={currentPassword}
+                                            onChange={(e) => setCurrentPassword(e.target.value)}
+                                            className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-900 focus:ring-2 focus:ring-black focus:border-transparent transition-all outline-none pr-10"
+                                            placeholder="Enter current password"
+                                        />
+                                        <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-4 top-9 text-gray-400 hover:text-gray-600">
+                                            <i className={`fa-solid ${showPw ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                                        </button>
+                                    </div>
+                                    <div className="relative">
+                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block">New Password</label>
+                                        <input
+                                            type={showPw ? "text" : "password"}
+                                            value={newPassword}
+                                            onChange={(e) => setNewPassword(e.target.value)}
+                                            className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-900 focus:ring-2 focus:ring-black focus:border-transparent transition-all outline-none"
+                                            placeholder="Enter new password"
+                                        />
+                                    </div>
+                                    <div className="relative">
+                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block">Re-enter New Password</label>
+                                        <input
+                                            type={showPw ? "text" : "password"}
+                                            value={confirmNewPassword}
+                                            onChange={(e) => setConfirmNewPassword(e.target.value)}
+                                            className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-900 focus:ring-2 focus:ring-black focus:border-transparent transition-all outline-none"
+                                            placeholder="Confirm new password"
+                                        />
+                                    </div>
+                                    <div className="md:col-span-2 flex justify-end mt-2">
+                                        <button
+                                            onClick={handleChangePassword}
+                                            disabled={isChangingPassword || !currentPassword || !newPassword || !confirmNewPassword}
+                                            className="px-6 py-2.5 bg-gray-900 text-white text-sm font-bold rounded-xl shadow-md hover:bg-black transition active:scale-95 cursor-pointer disabled:opacity-50"
+                                        >
+                                            {isChangingPassword ? "Updating..." : "Update Password"}
+                                        </button>
                                     </div>
                                 </div>
                             </div>

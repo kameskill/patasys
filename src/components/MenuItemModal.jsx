@@ -51,7 +51,7 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
 
                 <button
                     onClick={onClose}
-                    className="absolute top-4 right-4 z-10 p-2 bg-white/90 hover:bg-white rounded-full shadow-md transition-transform active:scale-95"
+                    className="absolute top-4 right-4 z-10 p-2 bg-white/90 hover:bg-white rounded-full shadow-md transition-transform active:scale-95 cursor-pointer"
                 >
                     <svg className="w-5 h-5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -105,14 +105,14 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
                             <div className="flex items-center border border-gray-300 rounded-full px-1 py-1">
                                 <button
                                     onClick={handleDecrement}
-                                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 active:bg-gray-200 transition text-lg font-medium"
+                                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 active:bg-gray-200 transition text-lg font-medium cursor-pointer"
                                 >
                                     −
                                 </button>
                                 <span className="w-8 text-center font-bold text-lg">{quantity}</span>
                                 <button
                                     onClick={handleIncrement}
-                                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 active:bg-gray-200 transition text-lg font-medium"
+                                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 active:bg-gray-200 transition text-lg font-medium cursor-pointer"
                                 >
                                     +
                                 </button>
@@ -120,7 +120,7 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
 
                             <button
                                 onClick={handleAddToCart}
-                                className="flex-1 bg-black text-white font-bold py-3 px-4 rounded-full hover:bg-neutral-800 active:scale-95 transition flex justify-between items-center shadow-lg"
+                                className="flex-1 bg-black text-white font-bold py-3 px-4 rounded-full hover:bg-neutral-800 active:scale-95 transition flex justify-between items-center shadow-lg cursor-pointer"
                             >
                                 <span>Add to Order</span>
                                 <span>{formatPrice(totalPrice)}</span>

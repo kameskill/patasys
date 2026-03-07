@@ -18,11 +18,37 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
 
     if (!open || !item) return null;
 
-    const handleIncrement = () => setQuantity((p) => p + 1);
-    const handleDecrement = () => setQuantity((p) => (p > 1 ? p - 1 : 1));
+    const handleIncrement = () => setQuantity((p) => {
+        const next = p === "" ? 1 : Number(p) + 1;
+        return next > item.stock_quantity ? item.stock_quantity : next;
+    });
+
+    const handleDecrement = () => setQuantity((p) => (p > 1 ? Number(p) - 1 : 1));
+
+    const handleQuantityChange = (e) => {
+        const val = e.target.value.replace(/\D/g, '');
+        if (val === "") {
+            setQuantity("");
+        } else {
+            const num = parseInt(val, 10);
+            if (num > item.stock_quantity) {
+                setQuantity(item.stock_quantity);
+            } else {
+                setQuantity(num);
+            }
+        }
+    };
+
+    const handleQuantityBlur = () => {
+        if (quantity === "" || quantity < 1) {
+            setQuantity(1);
+        }
+    };
 
     const handleAddToCart = () => {
-        onAddToCart(item, quantity);
+        let finalQty = quantity === "" || quantity < 1 ? 1 : quantity;
+        if (finalQty > item.stock_quantity) finalQty = item.stock_quantity;
+        onAddToCart(item, finalQty);
         onClose();
     };
 
@@ -32,7 +58,8 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
             currency: "PHP",
         }).format(p);
 
-    const totalPrice = (item.price || 0) * quantity;
+    const currentQty = quantity === "" ? 1 : quantity;
+    const totalPrice = (item.price || 0) * currentQty;
     const prep = item.prep_time ? `${item.prep_time} mins` : "";
     const weight = item.weight ? item.weight : "";
 
@@ -82,7 +109,7 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
                         </span>
                     </div>
 
-                    <div className="flex items-center gap-3 text-sm text-gray-500 mb-4 font-medium">
+                    <div className="flex items-center gap-3 text-sm text-gray-500 mb-4 font-medium flex-wrap">
                         {prep && (
                             <span className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded-md">
                                 <i className="fa-regular fa-clock" /> {prep}
@@ -93,6 +120,9 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
                                 <i className="fa-solid fa-weight-hanging" /> {weight}
                             </span>
                         )}
+                        <span className="flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-1 rounded-md border border-blue-100">
+                            <i className="fa-solid fa-box" /> {item.stock_quantity} available
+                        </span>
                     </div>
 
                     <p className="text-gray-600 leading-relaxed mb-6">
@@ -109,10 +139,19 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
                                 >
                                     −
                                 </button>
-                                <span className="w-8 text-center font-bold text-lg">{quantity}</span>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    value={quantity}
+                                    onChange={handleQuantityChange}
+                                    onBlur={handleQuantityBlur}
+                                    className="w-10 text-center font-bold text-lg bg-transparent outline-none focus:ring-0 p-0 m-0 border-none"
+                                />
                                 <button
                                     onClick={handleIncrement}
-                                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 active:bg-gray-200 transition text-lg font-medium cursor-pointer"
+                                    disabled={currentQty >= item.stock_quantity}
+                                    className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 active:bg-gray-200 transition text-lg font-medium cursor-pointer disabled:opacity-30"
                                 >
                                     +
                                 </button>
@@ -120,7 +159,8 @@ export default function MenuItemModal({ open, onClose, item, onAddToCart }) {
 
                             <button
                                 onClick={handleAddToCart}
-                                className="flex-1 bg-black text-white font-bold py-3 px-4 rounded-full hover:bg-neutral-800 active:scale-95 transition flex justify-between items-center shadow-lg cursor-pointer"
+                                disabled={item.stock_quantity < 1}
+                                className="flex-1 bg-black text-white font-bold py-3 px-4 rounded-full hover:bg-neutral-800 active:scale-95 transition flex justify-between items-center shadow-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <span>Add to Order</span>
                                 <span>{formatPrice(totalPrice)}</span>

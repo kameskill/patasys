@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import supabase from "../config/Client";
 
-const STATUS_FLOW = ["pending", "confirmed", "preparing", "ready", "completed", "cancelled"];
+const STATUS_FLOW = ["pending", "preparing", "ready", "completed", "cancelled"];
 
 function AdminDashboard() {
     const navigate = useNavigate();
@@ -32,6 +32,27 @@ function AdminDashboard() {
 
     const [editingPriceId, setEditingPriceId] = useState(null);
     const [editPriceValue, setEditPriceValue] = useState("");
+
+    const [editingStockId, setEditingStockId] = useState(null);
+    const [editStockValue, setEditStockValue] = useState("");
+
+    const [menuModalOpen, setMenuModalOpen] = useState(false);
+    const [selectedMenuItem, setSelectedMenuItem] = useState(null);
+    const [uploading, setUploading] = useState(false);
+    const [menuImageFile, setMenuImageFile] = useState(null);
+    const [imagePreview, setImagePreview] = useState(null);
+    const fileInputRef = useRef(null);
+
+    const [menuFormData, setMenuFormData] = useState({
+        name: "",
+        price: "",
+        description: "",
+        prep_time: "",
+        weight: "",
+        stock_quantity: 0,
+        is_available: true,
+        image_url: ""
+    });
 
     const [msg, setMsg] = useState({ type: "", text: "" });
     const [confirmModal, setConfirmModal] = useState({ open: false, orderId: null, newStatus: null });
@@ -110,7 +131,7 @@ function AdminDashboard() {
         try {
             const { data, error } = await supabase
                 .from("menu_items")
-                .select("id, name, price, description, is_available, image_url")
+                .select("id, name, price, description, is_available, image_url, stock_quantity, prep_time, weight")
                 .order("name", { ascending: true });
             if (error) throw error;
             setMenuItems(data || []);
@@ -203,6 +224,19 @@ function AdminDashboard() {
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status, _saving: true } : o));
 
         try {
+            if (status.toLowerCase() === "cancelled" && orderToUpdate.status !== "cancelled") {
+                const { data: menuData } = await supabase.from("menu_items").select("id, stock_quantity");
+
+                for (const item of orderToUpdate.items) {
+                    const currentMenuItem = menuData.find(m => m.id === item.id);
+                    if (currentMenuItem) {
+                        await supabase.from("menu_items").update({
+                            stock_quantity: currentMenuItem.stock_quantity + item.quantity
+                        }).eq("id", item.id);
+                    }
+                }
+            }
+
             const { error } = await supabase.from("orders").update({ status }).eq("id", orderId);
             if (error) throw error;
 
@@ -217,8 +251,8 @@ function AdminDashboard() {
                     notifTitle = "Order Cancelled";
                     notifMessage = `Your order #${String(orderId).slice(0, 6)} has been cancelled by the admin.`;
                 } else if (status.toLowerCase() === "ready") {
-                    notifTitle = "Order is Ready!";
-                    notifMessage = `Your order #${String(orderId).slice(0, 6)} is packed and ready for pickup!`;
+                    notifTitle = "Ready for Pickup";
+                    notifMessage = `Your order #${String(orderId).slice(0, 6)} is ready for pickup!`;
                 }
 
                 await supabase.from("notifications").insert([{
@@ -231,6 +265,9 @@ function AdminDashboard() {
 
             setSuccess(`Order updated to ${status}`);
             fetchOrders();
+            if (status.toLowerCase() === "cancelled") {
+                fetchMenu();
+            }
         } catch (e) {
             setError("Update failed.");
             fetchOrders();
@@ -250,7 +287,6 @@ function AdminDashboard() {
             if (error) throw error;
             setSuccess(`${item.name} is now ${newVal ? "Available" : "Unavailable"}`);
         } catch (e) {
-            console.error(e);
             setError("Failed to update status.");
             fetchMenu();
         }
@@ -280,7 +316,6 @@ function AdminDashboard() {
             if (error) throw error;
             setSuccess(`${item.name} price updated.`);
         } catch (e) {
-            console.error(e);
             setError("Failed to update price.");
             fetchMenu();
         }
@@ -289,6 +324,139 @@ function AdminDashboard() {
     const handleCancelEditPrice = () => {
         setEditingPriceId(null);
         setEditPriceValue("");
+    };
+
+    const handleEditStockClick = (item) => {
+        setEditingStockId(item.id);
+        setEditStockValue(item.stock_quantity?.toString() || "0");
+    };
+
+    const handleSaveStock = async (item) => {
+        const newStock = parseInt(editStockValue, 10);
+        if (isNaN(newStock) || newStock < 0) {
+            setError("Please enter a valid quantity.");
+            return;
+        }
+
+        setMenuItems(prev => prev.map(m => m.id === item.id ? { ...m, stock_quantity: newStock } : m));
+        setEditingStockId(null);
+
+        try {
+            const { error } = await supabase
+                .from("menu_items")
+                .update({ stock_quantity: newStock })
+                .eq("id", item.id);
+
+            if (error) throw error;
+            setSuccess(`${item.name} stock updated.`);
+        } catch (e) {
+            setError("Failed to update stock.");
+            fetchMenu();
+        }
+    };
+
+    const handleCancelEditStock = () => {
+        setEditingStockId(null);
+        setEditStockValue("");
+    };
+
+    const openAddMenuModal = () => {
+        setSelectedMenuItem(null);
+        setMenuFormData({
+            name: "",
+            price: "",
+            description: "",
+            prep_time: "",
+            weight: "",
+            stock_quantity: 0,
+            is_available: true,
+            image_url: ""
+        });
+        setMenuImageFile(null);
+        setImagePreview(null);
+        setMenuModalOpen(true);
+    };
+
+    const openEditMenuModal = (item) => {
+        setSelectedMenuItem(item);
+        setMenuFormData({
+            name: item.name || "",
+            price: item.price || "",
+            description: item.description || "",
+            prep_time: item.prep_time || "",
+            weight: item.weight || "",
+            stock_quantity: item.stock_quantity || 0,
+            is_available: item.is_available,
+            image_url: item.image_url || ""
+        });
+        setMenuImageFile(null);
+        setImagePreview(item.image_url || null);
+        setMenuModalOpen(true);
+    };
+
+    const handleImageFileChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            setMenuImageFile(file);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setImagePreview(reader.result);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleMenuSubmit = async (e) => {
+        e.preventDefault();
+        setUploading(true);
+        let finalImageUrl = menuFormData.image_url;
+
+        try {
+            if (menuImageFile) {
+                const fileExt = menuImageFile.name.split('.').pop();
+                const fileName = `${Date.now()}.${fileExt}`;
+
+                const { error: uploadError } = await supabase.storage
+                    .from('menu-images')
+                    .upload(fileName, menuImageFile);
+
+                if (uploadError) throw uploadError;
+
+                const { data } = supabase.storage
+                    .from('menu-images')
+                    .getPublicUrl(fileName);
+
+                finalImageUrl = data.publicUrl;
+            }
+
+            const payload = {
+                name: menuFormData.name,
+                price: parseFloat(menuFormData.price) || 0,
+                description: menuFormData.description,
+                prep_time: menuFormData.prep_time,
+                weight: menuFormData.weight,
+                stock_quantity: parseInt(menuFormData.stock_quantity, 10) || 0,
+                is_available: menuFormData.is_available,
+                image_url: finalImageUrl
+            };
+
+            if (selectedMenuItem) {
+                const { error } = await supabase.from("menu_items").update(payload).eq("id", selectedMenuItem.id);
+                if (error) throw error;
+                setSuccess("Menu item updated successfully!");
+            } else {
+                const { error } = await supabase.from("menu_items").insert([payload]);
+                if (error) throw error;
+                setSuccess("New menu item added successfully!");
+            }
+
+            setMenuModalOpen(false);
+            fetchMenu();
+        } catch (error) {
+            setError(error.message || "Failed to save menu item.");
+        } finally {
+            setUploading(false);
+        }
     };
 
     const handleUserActionClick = (userId, action, userName) => {
@@ -319,7 +487,7 @@ function AdminDashboard() {
             } else if (action === "warn") {
                 const { error } = await supabase.from("notifications").insert([{
                     user_id: userId,
-                    title: "Account Warning ⚠️",
+                    title: "Account Warning \u26a0\ufe0f",
                     message: "Please avoid cancelling orders frequently. Excessive cancellations disrupt kitchen operations and may result in your account being blocked or banned.",
                     is_read: false
                 }]);
@@ -328,7 +496,6 @@ function AdminDashboard() {
             }
             fetchUsers();
         } catch (e) {
-            console.error(e);
             setError(`Failed to ${action} user. Ensure Admin RLS policies are set.`);
         }
     };
@@ -345,13 +512,17 @@ function AdminDashboard() {
     const getStatusBadge = (status) => {
         const s = (status || "pending").toLowerCase();
         let classes = "bg-gray-100 text-gray-600 border-gray-200";
+        let label = s;
         if (s === "completed" || s === "served") classes = "bg-green-100 text-green-700 border-green-200";
         if (s === "pending") classes = "bg-yellow-100 text-yellow-700 border-yellow-200";
         if (s === "cancelled") classes = "bg-red-100 text-red-700 border-red-200";
         if (s === "preparing") classes = "bg-blue-100 text-blue-700 border-blue-200";
-        if (s === "ready") classes = "bg-emerald-100 text-emerald-700 border-emerald-200";
+        if (s === "ready") {
+            classes = "bg-emerald-100 text-emerald-700 border-emerald-200";
+            label = "ready for pickup";
+        }
 
-        return <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${classes}`}>{s}</span>;
+        return <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${classes}`}>{label}</span>;
     };
 
     if (checking) return <div className="min-h-screen grid place-items-center">Loading...</div>;
@@ -386,7 +557,7 @@ function AdminDashboard() {
                             </div>
                             <h3 className="text-lg font-bold text-gray-900 mb-2">Confirm Action</h3>
                             <p className="text-gray-500 text-sm mb-6">
-                                Change order status to <span className="font-bold uppercase text-black">{confirmModal.newStatus}</span>?
+                                Change order status to <span className="font-bold uppercase text-black">{confirmModal.newStatus === 'ready' ? 'READY FOR PICKUP' : confirmModal.newStatus}</span>?
                             </p>
                             <div className="flex gap-3 justify-center">
                                 <button onClick={() => setConfirmModal({ open: false, orderId: null, newStatus: null })} className="flex-1 px-5 py-2.5 rounded-full border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition cursor-pointer">Cancel</button>
@@ -409,15 +580,103 @@ function AdminDashboard() {
                             </h3>
                             <p className="text-gray-500 text-sm mb-6">
                                 {userConfirmModal.action === 'ban' ? `This will log ${userConfirmModal.userName} out and prevent them from accessing the app entirely.` :
-                                 userConfirmModal.action === 'unban' ? `This will restore ${userConfirmModal.userName}'s access to log in.` :
-                                 userConfirmModal.action === 'warn' ? `This will send a direct notification to ${userConfirmModal.userName} warning them about excessive order cancellations.` :
-                                 userConfirmModal.action === 'block' ? `This will prevent ${userConfirmModal.userName} from placing future orders.` :
-                                 `This will restore ${userConfirmModal.userName}'s ability to order.`}
+                                    userConfirmModal.action === 'unban' ? `This will restore ${userConfirmModal.userName}'s access to log in.` :
+                                        userConfirmModal.action === 'warn' ? `This will send a direct notification to ${userConfirmModal.userName} warning them about excessive order cancellations.` :
+                                            userConfirmModal.action === 'block' ? `This will prevent ${userConfirmModal.userName} from placing future orders.` :
+                                                `This will restore ${userConfirmModal.userName}'s ability to order.`}
                             </p>
                             <div className="flex gap-3 justify-center">
                                 <button onClick={() => setUserConfirmModal({ open: false, userId: null, action: null, userName: "" })} className="flex-1 px-5 py-2.5 rounded-full border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition cursor-pointer">Cancel</button>
                                 <button onClick={executeUserAction} className={`flex-1 px-5 py-2.5 rounded-full text-white font-medium shadow-md transition cursor-pointer ${userConfirmModal.action === 'ban' ? 'bg-red-600 hover:bg-red-700' : userConfirmModal.action === 'unban' ? 'bg-green-600 hover:bg-green-700' : userConfirmModal.action === 'warn' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-orange-600 hover:bg-orange-700'}`}>Confirm</button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {menuModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg my-8 animate-[fadeIn_0.2s_ease-out]">
+                        <div className="p-5 border-b border-gray-100 flex justify-between items-center sticky top-0 bg-white rounded-t-2xl z-10">
+                            <h3 className="text-xl font-bold">{selectedMenuItem ? "Edit Menu Item" : "Add New Item"}</h3>
+                            <button onClick={() => setMenuModalOpen(false)} className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center transition cursor-pointer text-gray-500 hover:text-black">
+                                <i className="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <form id="menuForm" onSubmit={handleMenuSubmit} className="space-y-5">
+                                <div className="flex flex-col items-center gap-4 mb-2">
+                                    <div
+                                        className="w-full h-48 bg-gray-100 border-2 border-dashed border-gray-300 rounded-xl overflow-hidden relative flex items-center justify-center cursor-pointer hover:bg-gray-50 transition"
+                                        onClick={() => fileInputRef.current?.click()}
+                                    >
+                                        {imagePreview ? (
+                                            <>
+                                                <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                                                    <span className="text-white font-bold flex items-center gap-2"><i className="fa-solid fa-camera"></i> Change Image</span>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="text-center text-gray-400">
+                                                <i className="fa-solid fa-cloud-arrow-up text-3xl mb-2"></i>
+                                                <p className="text-sm font-medium text-gray-600">Click to upload image</p>
+                                                <p className="text-xs mt-1">JPG, PNG up to 5MB</p>
+                                            </div>
+                                        )}
+                                        <input
+                                            type="file"
+                                            ref={fileInputRef}
+                                            onChange={handleImageFileChange}
+                                            accept="image/*"
+                                            className="hidden"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">Item Name *</label>
+                                    <input required type="text" value={menuFormData.name} onChange={e => setMenuFormData({ ...menuFormData, name: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-black" placeholder="e.g. Crispy Pata XXL" />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">Description</label>
+                                    <textarea value={menuFormData.description} onChange={e => setMenuFormData({ ...menuFormData, description: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-black resize-none" rows="2" placeholder="Brief description of the dish..." />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-1">Price (₱) *</label>
+                                        <input required type="number" step="0.01" min="0" value={menuFormData.price} onChange={e => setMenuFormData({ ...menuFormData, price: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-black" placeholder="0.00" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-1">Initial Stock *</label>
+                                        <input required type="number" min="0" value={menuFormData.stock_quantity} onChange={e => setMenuFormData({ ...menuFormData, stock_quantity: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-black" placeholder="0" />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-1">Prep Time</label>
+                                        <input type="text" value={menuFormData.prep_time} onChange={e => setMenuFormData({ ...menuFormData, prep_time: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-black" placeholder="e.g. 20 mins" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-1">Weight/Serving</label>
+                                        <input type="text" value={menuFormData.weight} onChange={e => setMenuFormData({ ...menuFormData, weight: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-black" placeholder="e.g. 1.36+ kg" />
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-3 pt-2">
+                                    <input type="checkbox" id="isAvailable" checked={menuFormData.is_available} onChange={e => setMenuFormData({ ...menuFormData, is_available: e.target.checked })} className="w-4 h-4 accent-black cursor-pointer" />
+                                    <label htmlFor="isAvailable" className="text-sm font-bold text-gray-700 cursor-pointer">Mark as Available immediately</label>
+                                </div>
+                            </form>
+                        </div>
+                        <div className="p-5 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex gap-3 justify-end sticky bottom-0">
+                            <button type="button" onClick={() => setMenuModalOpen(false)} className="px-5 py-2.5 rounded-full font-bold text-gray-600 hover:bg-gray-200 transition cursor-pointer">Cancel</button>
+                            <button type="submit" form="menuForm" disabled={uploading} className="px-6 py-2.5 rounded-full font-bold bg-black text-white hover:bg-gray-800 transition shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50">
+                                {uploading ? <><i className="fa-solid fa-circle-notch animate-spin"></i> Saving...</> : "Save Menu Item"}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -479,7 +738,7 @@ function AdminDashboard() {
 
                             {selectedOrder.notes && (
                                 <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-xl text-sm text-yellow-800">
-                                    <span className="font-bold mb-1 flex items-center gap-2"><i className="fa-regular fa-comment-dots"></i> Special Instructions:</span>
+                                    <span className="font-bold block mb-1 flex items-center gap-2"><i className="fa-regular fa-comment-dots"></i> Special Instructions:</span>
                                     <p className="italic">{selectedOrder.notes}</p>
                                 </div>
                             )}
@@ -527,14 +786,14 @@ function AdminDashboard() {
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                             <div className="flex bg-gray-100 rounded-lg p-1 w-full md:w-auto shrink-0">
                                 <button onClick={() => { setOrderView("active"); setFilterStatus("all"); }} className={`flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold transition cursor-pointer ${orderView === "active" ? "bg-white text-black shadow-sm" : "text-gray-500 hover:text-black"}`}>Active Orders</button>
-                                <button onClick={() => { setOrderView("history"); setFilterStatus("all"); }} className={`flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold transition cursor-pointer ${orderView === "history" ? "bg-white text-black shadow-sm" : "text-gray-500 hover:text-black"}`}>Past History</button>
+                                <button onClick={() => { setOrderView("history"); setFilterStatus("all"); }} className={`flex-1 md:flex-none px-6 py-2 rounded-md text-sm font-bold transition cursor-pointer ${orderView === "history" ? "bg-white text-black shadow-sm" : "text-gray-500 hover:text-black"}`}>History</button>
                             </div>
 
                             <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
                                 <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0 scrollbar-hide">
                                     {orderView === "active" ? (
-                                        ["all", "pending", "confirmed", "preparing", "ready"].map(s => (
-                                            <button key={s} onClick={() => setFilterStatus(s)} className={`px-4 py-2 rounded-full text-xs font-bold uppercase border transition whitespace-nowrap cursor-pointer ${filterStatus === s ? "bg-black text-white border-black" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"}`}>{s}</button>
+                                        ["all", "pending", "preparing", "ready"].map(s => (
+                                            <button key={s} onClick={() => setFilterStatus(s)} className={`px-4 py-2 rounded-full text-xs font-bold uppercase border transition whitespace-nowrap cursor-pointer ${filterStatus === s ? "bg-black text-white border-black" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"}`}>{s === 'ready' ? 'ready for pickup' : s}</button>
                                         ))
                                     ) : (
                                         ["all", "completed", "cancelled"].map(s => (
@@ -631,7 +890,7 @@ function AdminDashboard() {
                                                         value={order.status}
                                                         onChange={(e) => handleStatusChange(order.id, e.target.value)}
                                                     >
-                                                        {STATUS_FLOW.map(s => (<option key={s} value={s}>{s.toUpperCase()}</option>))}
+                                                        {STATUS_FLOW.map(s => (<option key={s} value={s}>{s === 'ready' ? 'READY FOR PICKUP' : s.toUpperCase()}</option>))}
                                                     </select>
                                                     <i className="fa-solid fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs"></i>
                                                 </div>
@@ -650,9 +909,14 @@ function AdminDashboard() {
                     <div className="animate-[fadeIn_0.2s_ease-out]">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                             <h2 className="text-2xl font-bold">Menu Management</h2>
-                            <button onClick={fetchMenu} disabled={loadingMenu} className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50 transition cursor-pointer flex items-center gap-2">
-                                <i className={`fa-solid fa-rotate-right ${loadingMenu ? 'animate-spin' : ''}`}></i> Refresh
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button onClick={fetchMenu} disabled={loadingMenu} className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-50 transition cursor-pointer flex items-center gap-2">
+                                    <i className={`fa-solid fa-rotate-right ${loadingMenu ? 'animate-spin' : ''}`}></i> Refresh
+                                </button>
+                                <button onClick={openAddMenuModal} className="px-4 py-2 bg-black text-white rounded-lg text-sm font-bold shadow-sm hover:bg-gray-800 transition cursor-pointer flex items-center gap-2">
+                                    <i className="fa-solid fa-plus"></i> Add Item
+                                </button>
+                            </div>
                         </div>
 
                         {loadingMenu ? (
@@ -669,6 +933,7 @@ function AdminDashboard() {
                                         <tr>
                                             <th className="px-6 py-4 rounded-tl-2xl">Item Info</th>
                                             <th className="px-6 py-4">Price</th>
+                                            <th className="px-6 py-4">Stock</th>
                                             <th className="px-6 py-4">Status</th>
                                             <th className="px-6 py-4 text-right rounded-tr-2xl">Actions</th>
                                         </tr>
@@ -685,7 +950,10 @@ function AdminDashboard() {
                                                                 <div className="w-full h-full flex items-center justify-center text-gray-300"><i className="fa-solid fa-image text-xs"></i></div>
                                                             )}
                                                         </div>
-                                                        <span className="font-bold text-gray-900">{item.name}</span>
+                                                        <div className="flex flex-col">
+                                                            <span className="font-bold text-gray-900">{item.name}</span>
+                                                            <button onClick={() => openEditMenuModal(item)} className="text-[10px] text-blue-600 hover:underline text-left mt-0.5 cursor-pointer">Edit Details & Image</button>
+                                                        </div>
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4">
@@ -714,6 +982,33 @@ function AdminDashboard() {
                                                                 title="Edit Price"
                                                             >
                                                                 <i className="fa-solid fa-pen text-[10px]"></i>
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    {editingStockId === item.id ? (
+                                                        <div className="flex items-center gap-2">
+                                                            <input
+                                                                type="number"
+                                                                autoFocus
+                                                                className="w-16 px-2 py-1.5 bg-white border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-black focus:border-transparent font-bold text-sm text-center"
+                                                                value={editStockValue}
+                                                                onChange={(e) => setEditStockValue(e.target.value)}
+                                                                onKeyDown={(e) => e.key === 'Enter' && handleSaveStock(item)}
+                                                            />
+                                                            <button onClick={() => handleSaveStock(item)} className="h-8 w-8 bg-black text-white rounded-lg hover:bg-gray-800 transition flex items-center justify-center cursor-pointer shadow-sm" title="Save"><i className="fa-solid fa-check text-xs"></i></button>
+                                                            <button onClick={handleCancelEditStock} className="h-8 w-8 bg-white border border-gray-200 text-gray-500 rounded-lg hover:bg-gray-50 hover:text-black transition flex items-center justify-center cursor-pointer shadow-sm" title="Cancel"><i className="fa-solid fa-xmark text-xs"></i></button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-3">
+                                                            <span className="font-black text-gray-900 text-sm">{item.stock_quantity || 0}</span>
+                                                            <button
+                                                                onClick={() => handleEditStockClick(item)}
+                                                                className="h-7 w-7 bg-white border border-gray-200 text-gray-500 hover:text-black hover:border-gray-300 rounded-md transition-all flex items-center justify-center cursor-pointer shadow-sm"
+                                                                title="Edit Stock"
+                                                            >
+                                                                <i className="fa-solid fa-boxes-stacked text-[10px]"></i>
                                                             </button>
                                                         </div>
                                                     )}
@@ -810,7 +1105,7 @@ function AdminDashboard() {
                                                                     <button onClick={() => handleUserActionClick(u.user_id, 'warn', u.full_name)} className="h-8 w-8 flex items-center justify-center rounded-xl border bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100 transition cursor-pointer shadow-sm" title="Send Warning">
                                                                         <i className="fa-solid fa-triangle-exclamation text-xs"></i>
                                                                     </button>
-                                                                    
+
                                                                     {u.is_blocked ? (
                                                                         <button onClick={() => handleUserActionClick(u.user_id, 'unblock', u.full_name)} className="px-4 py-1.5 rounded-xl text-xs font-bold border bg-white border-gray-200 text-gray-700 hover:bg-gray-50 transition cursor-pointer shadow-sm">
                                                                             Unblock

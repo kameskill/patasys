@@ -5,6 +5,38 @@ import MenuCard from "../components/MenuCard";
 import MenuItemModal from "../components/MenuItemModal";
 import { useNavigate } from "react-router-dom";
 
+const COOKING_TIME = {
+    "Crispy Pata XXL": 20,
+    "Crispy Pata XL": 20,
+    "Crispy Pata L": 20,
+    "Crispy Liempo": 15,
+    "Fried Chicken": 15,
+    "Pork Lumpia": 10,
+    "Crispy Ulo": 25,
+    "Pork Belly": 20,
+    "Chicharon Bulaklak": 15
+};
+
+const KAWALI_CAPACITY = 4;
+
+function estimateCookingTime(cartItems) {
+    if (!cartItems || cartItems.length === 0) return 0;
+    let times = [];
+    cartItems.forEach(item => {
+        const time = COOKING_TIME[item.name] || 15;
+        for (let i = 0; i < item.quantity; i++) {
+            times.push(time);
+        }
+    });
+    times.sort((a, b) => b - a);
+    let total = 0;
+    while (times.length > 0) {
+        const batch = times.splice(0, KAWALI_CAPACITY);
+        total += Math.max(...batch);
+    }
+    return total;
+}
+
 function Home() {
     const navigate = useNavigate();
 
@@ -12,7 +44,6 @@ function Home() {
         cart,
         setCart,
         addToCart,
-        increaseQty,
         decreaseQty,
         removeFromCart,
         clearCart,
@@ -58,7 +89,8 @@ function Home() {
 
     const [editProfile, setEditProfile] = useState({
         full_name: "",
-        phone: ""
+        phone: "",
+        email: ""
     });
     const [isSavingProfile, setIsSavingProfile] = useState(false);
 
@@ -118,16 +150,60 @@ function Home() {
                 id: item.id,
                 name: item.name,
                 price: item.price,
-                quantity: item.quantity,
+                quantity: item.quantity === "" ? 1 : Number(item.quantity),
                 image_url: item.image_url
             })),
         [cart]
     );
 
+    const estimatedCookingTime = useMemo(() => {
+        return estimateCookingTime(cart);
+    }, [cart]);
+
     const fillCheckoutFromProfile = (p) => {
         setCheckout((prev) => ({
             ...prev,
             phone: prev.phone?.trim() ? prev.phone : p.phone?.replace("+63", "") || "",
+        }));
+    };
+
+    const handleQuantityChange = (id, val) => {
+        const numericVal = val.replace(/\D/g, '');
+        const menuItem = menu.find(m => m.id === id);
+        const maxStock = menuItem ? menuItem.stock_quantity : 999;
+
+        setCart(prev => prev.map(item => {
+            if (item.id === id) {
+                if (numericVal === "") return { ...item, quantity: "" };
+                let num = parseInt(numericVal, 10);
+                if (num > maxStock) num = maxStock;
+                return { ...item, quantity: num };
+            }
+            return item;
+        }));
+    };
+
+    const handleQuantityBlur = (id, val) => {
+        setCart(prev => prev.map(item => {
+            if (item.id === id) {
+                if (val === "" || Number(val) <= 0 || isNaN(Number(val))) {
+                    return { ...item, quantity: 1 };
+                }
+            }
+            return item;
+        }));
+    };
+
+    const handleIncreaseCartQty = (id) => {
+        const menuItem = menu.find(m => m.id === id);
+        const maxStock = menuItem ? menuItem.stock_quantity : 999;
+
+        setCart(prev => prev.map(item => {
+            if (item.id === id) {
+                const newQty = (Number(item.quantity) || 1) + 1;
+                return { ...item, quantity: newQty > maxStock ? maxStock : newQty };
+            }
+            return item;
         }));
     };
 
@@ -202,6 +278,16 @@ function Home() {
                     is_blocked: false,
                     is_banned: false
                 }]);
+                setProfile({
+                    full_name: fullName,
+                    phone: u.user_metadata?.phone || "",
+                    is_blocked: false,
+                });
+                setEditProfile({
+                    full_name: fullName,
+                    phone: (u.user_metadata?.phone || "").replace("+63", ""),
+                    email: u.email || ""
+                });
             } else if (prof) {
                 setProfile({
                     full_name: prof.full_name || "",
@@ -210,7 +296,8 @@ function Home() {
                 });
                 setEditProfile({
                     full_name: prof.full_name || "",
-                    phone: (prof.phone || "").replace("+63", "")
+                    phone: (prof.phone || "").replace("+63", ""),
+                    email: u.email || ""
                 });
                 fillCheckoutFromProfile(prof);
                 if (prof.cart_data && Array.isArray(prof.cart_data) && prof.cart_data.length > 0) {
@@ -288,7 +375,6 @@ function Home() {
         return () => clearTimeout(timer);
     }, [itemsPayload, user, isProfileLoaded]);
 
-
     const markAsRead = async (notifId) => {
         try {
             const targetNotif = notifications.find(n => n.id === notifId);
@@ -340,7 +426,7 @@ function Home() {
     };
 
     const handleSaveProfile = async () => {
-        if (!editProfile.full_name.trim()) return setError("Name cannot be empty.");
+        if (!editProfile.email.trim()) return setError("Email cannot be empty.");
         if (editProfile.phone.length !== 10 || !editProfile.phone.startsWith("9")) {
             return setError("Phone must be exactly 10 digits and start with 9.");
         }
@@ -349,17 +435,25 @@ function Home() {
         const formattedPhone = "+63" + editProfile.phone;
 
         try {
+            if (editProfile.email !== user.email) {
+                const { error: updateError } = await supabase.auth.updateUser({ email: editProfile.email });
+                if (updateError) throw updateError;
+                setSuccess("Please check your new email to confirm the change.");
+            }
+
             const { error } = await supabase
                 .from("profiles")
-                .update({ full_name: editProfile.full_name.trim(), phone: formattedPhone })
+                .update({ phone: formattedPhone })
                 .eq("user_id", user.id);
 
             if (error) throw error;
 
-            setProfile(prev => ({ ...prev, full_name: editProfile.full_name.trim(), phone: formattedPhone }));
-            setSuccess("Profile updated successfully.");
+            setProfile(prev => ({ ...prev, phone: formattedPhone }));
+            if (editProfile.email === user.email) {
+                setSuccess("Profile updated successfully.");
+            }
         } catch (err) {
-            setError("Failed to update profile.");
+            setError(err.message || "Failed to update profile.");
         } finally {
             setIsSavingProfile(false);
         }
@@ -408,7 +502,7 @@ function Home() {
 
     const hasProfileChanges = () => {
         const cleanSavedPhone = profile.phone.replace("+63", "");
-        return editProfile.full_name !== profile.full_name || editProfile.phone !== cleanSavedPhone;
+        return editProfile.email !== user?.email || editProfile.phone !== cleanSavedPhone;
     };
 
     const placeOrder = async () => {
@@ -425,7 +519,7 @@ function Home() {
             const cartItemIds = cart.map(item => item.id);
             const { data: liveMenuItems, error: menuError } = await supabase
                 .from("menu_items")
-                .select("id, name, is_available")
+                .select("id, name, is_available, stock_quantity")
                 .in("id", cartItemIds);
 
             if (menuError) throw new Error("Failed to verify item availability. Please try again.");
@@ -433,7 +527,7 @@ function Home() {
             const unavailableItems = [];
             for (const cartItem of cart) {
                 const liveItem = liveMenuItems?.find(m => m.id === cartItem.id);
-                if (!liveItem || !liveItem.is_available) {
+                if (!liveItem || !liveItem.is_available || liveItem.stock_quantity < cartItem.quantity) {
                     unavailableItems.push(cartItem.name);
                 }
             }
@@ -443,7 +537,7 @@ function Home() {
                 const { data } = await supabase.from("menu_items").select("*").order("id", { ascending: true });
                 if (data) setMenu(data);
 
-                return setError(`Cannot proceed. The following items are currently Sold Out: ${unavailableItems.join(", ")}. Please remove them from your cart.`);
+                return setError(`Cannot proceed. Some items are out of stock or unavailable: ${unavailableItems.join(", ")}.`);
             }
 
             const cleanCheckoutPhone = cleanPhone10(checkout.phone);
@@ -473,6 +567,15 @@ function Home() {
 
             if (error) throw error;
 
+            for (const item of cart) {
+                const liveItem = liveMenuItems.find(m => m.id === item.id);
+                if (liveItem) {
+                    await supabase.from("menu_items").update({
+                        stock_quantity: liveItem.stock_quantity - item.quantity
+                    }).eq("id", item.id);
+                }
+            }
+
             if (effective.phone !== profile.phone) {
                 await supabase.from("profiles").update({ phone: effective.phone }).eq("user_id", user.id);
                 setProfile(prev => ({ ...prev, phone: effective.phone }));
@@ -497,6 +600,7 @@ function Home() {
             setSuccess("Order placed successfully!");
             clearCart();
             setActive("orders");
+            setPlacing(false);
 
             const { data: orderData } = await supabase.from("orders").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
             if (orderData) setOrders(orderData);
@@ -521,7 +625,7 @@ function Home() {
         try {
             const { data: currentOrder, error: fetchError } = await supabase
                 .from('orders')
-                .select('status')
+                .select('status, items')
                 .eq('id', orderToCancel)
                 .single();
 
@@ -532,6 +636,18 @@ function Home() {
                 const { data } = await supabase.from("orders").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
                 setOrders(data || []);
                 return;
+            }
+
+            const { data: menuData } = await supabase.from("menu_items").select("id, stock_quantity");
+            if (menuData && currentOrder.items) {
+                for (const item of currentOrder.items) {
+                    const currentMenuItem = menuData.find(m => m.id === item.id);
+                    if (currentMenuItem) {
+                        await supabase.from("menu_items").update({
+                            stock_quantity: currentMenuItem.stock_quantity + item.quantity
+                        }).eq("id", item.id);
+                    }
+                }
             }
 
             const { error: updateError } = await supabase
@@ -568,7 +684,7 @@ function Home() {
     };
 
     const openItemModal = (item) => {
-        if (!item.is_available) return;
+        if (!item.is_available || item.stock_quantity < 1) return;
         setSelectedItem(item);
         setModalOpen(true);
     };
@@ -576,12 +692,16 @@ function Home() {
     const getStatusBadge = (status) => {
         const s = (status || "pending").toLowerCase();
         let classes = "bg-gray-100 text-gray-600";
+        let label = s;
         if (s === "completed" || s === "served") classes = "bg-green-100 text-green-700 border border-green-200";
         if (s === "pending") classes = "bg-yellow-50 text-yellow-700 border border-yellow-200";
         if (s === "cancelled") classes = "bg-red-50 text-red-700 border border-red-200";
         if (s === "preparing") classes = "bg-blue-50 text-blue-700 border border-blue-200";
-        if (s === "ready") classes = "bg-emerald-50 text-emerald-700 border border-emerald-200";
-        return <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${classes}`}>{s}</span>;
+        if (s === "ready") {
+            classes = "bg-emerald-50 text-emerald-700 border border-emerald-200";
+            label = "ready for pickup";
+        }
+        return <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${classes}`}>{label}</span>;
     };
 
     const getItemImage = (item) => {
@@ -827,15 +947,15 @@ function Home() {
                                             prepTime={`${item.prep_time} mins`}
                                             price={item.price}
                                             onAdd={() => {
-                                                if (!item.is_available) return;
+                                                if (!item.is_available || item.stock_quantity < 1) return;
                                                 addToCart(item);
                                                 setSuccess(`${item.name} added to cart!`);
                                             }}
                                             onImageClick={() => openItemModal(item)}
-                                            disabled={!item.is_available || profile.is_blocked}
+                                            disabled={!item.is_available || profile.is_blocked || item.stock_quantity < 1}
                                         />
 
-                                        {!item.is_available && (
+                                        {(!item.is_available || item.stock_quantity < 1) && (
                                             <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-10 flex items-center justify-center rounded-2xl border border-gray-100">
                                                 <div className="bg-red-100 text-red-800 px-4 py-2 rounded-full font-bold text-sm shadow-sm border border-red-200 transform -rotate-12">
                                                     Sold Out
@@ -843,8 +963,8 @@ function Home() {
                                             </div>
                                         )}
 
-                                        <div className="absolute top-3 right-3 z-20">
-                                            {item.is_available ? (
+                                        <div className="absolute top-3 right-3 z-20 flex flex-col gap-1 items-end">
+                                            {item.is_available && item.stock_quantity > 0 ? (
                                                 <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-1 rounded-full border border-green-200 shadow-sm">Available</span>
                                             ) : (
                                                 <span className="bg-gray-100 text-gray-500 text-[10px] font-bold px-2 py-1 rounded-full border border-gray-200 shadow-sm">Unavailable</span>
@@ -883,7 +1003,8 @@ function Home() {
                                     <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
                                         {cart.map((item, idx) => {
                                             const liveMenuItem = menu.find(m => m.id === item.id);
-                                            const isSoldOut = liveMenuItem ? !liveMenuItem.is_available : false;
+                                            const isSoldOut = liveMenuItem ? (!liveMenuItem.is_available || liveMenuItem.stock_quantity < 1) : false;
+                                            const maxStock = liveMenuItem ? liveMenuItem.stock_quantity : 999;
 
                                             return (
                                                 <div key={item.id} className={`p-4 md:p-6 flex gap-4 items-start ${idx !== cart.length - 1 ? "border-b border-gray-100" : ""} ${isSoldOut ? "bg-red-50/40 opacity-75" : ""}`}>
@@ -896,14 +1017,28 @@ function Home() {
                                                                 {item.name}
                                                                 {isSoldOut && <span className="ml-2 inline-block px-2 py-0.5 rounded-md bg-red-100 text-red-700 text-[10px] font-black uppercase tracking-wider border border-red-200">Sold Out</span>}
                                                             </h4>
-                                                            <span className="font-bold text-gray-900">₱{fmtMoney(Number(item.price) * Number(item.quantity))}</span>
+                                                            <span className="font-bold text-gray-900">₱{fmtMoney(Number(item.price) * (Number(item.quantity) || 1))}</span>
                                                         </div>
-                                                        <p className="text-sm text-gray-500 mb-4">₱{fmtMoney(item.price)} each</p>
+                                                        <p className="text-sm text-gray-500 mb-2">₱{fmtMoney(item.price)} each</p>
+                                                        {!isSoldOut && (
+                                                            <span className="inline-block mb-3 bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold border border-blue-100">
+                                                                Stock: {maxStock}
+                                                            </span>
+                                                        )}
                                                         <div className="flex items-center justify-between">
-                                                            <div className={`flex items-center gap-3 bg-gray-50 rounded-full p-1 border border-gray-200 ${isSoldOut ? "opacity-50 pointer-events-none" : ""}`}>
+                                                            <div className={`flex items-center gap-1 bg-gray-50 rounded-full p-1 border border-gray-200 ${isSoldOut ? "opacity-50 pointer-events-none" : ""}`}>
                                                                 <button onClick={() => decreaseQty(item.id)} disabled={item.quantity <= 1 || isSoldOut} className="w-8 h-8 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center text-gray-600 hover:text-black disabled:opacity-50 cursor-pointer"><i className="fa-solid fa-minus text-xs"></i></button>
-                                                                <span className="text-sm font-bold w-4 text-center">{item.quantity}</span>
-                                                                <button onClick={() => increaseQty(item.id)} disabled={isSoldOut} className="w-8 h-8 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center text-gray-600 hover:text-black cursor-pointer disabled:opacity-50"><i className="fa-solid fa-plus text-xs"></i></button>
+                                                                <input
+                                                                    type="text"
+                                                                    inputMode="numeric"
+                                                                    pattern="[0-9]*"
+                                                                    value={item.quantity}
+                                                                    onChange={(e) => handleQuantityChange(item.id, e.target.value)}
+                                                                    onBlur={(e) => handleQuantityBlur(item.id, e.target.value)}
+                                                                    disabled={isSoldOut}
+                                                                    className="w-8 text-sm font-bold text-center bg-transparent outline-none focus:ring-0 p-0 m-0 border-none"
+                                                                />
+                                                                <button onClick={() => handleIncreaseCartQty(item.id)} disabled={isSoldOut || item.quantity >= maxStock} className="w-8 h-8 rounded-full bg-white shadow-sm border border-gray-100 flex items-center justify-center text-gray-600 hover:text-black cursor-pointer disabled:opacity-50"><i className="fa-solid fa-plus text-xs"></i></button>
                                                             </div>
                                                             <button onClick={() => removeFromCart(item.id)} className="text-xs font-semibold text-gray-400 hover:text-red-600 underline transition cursor-pointer">Remove</button>
                                                         </div>
@@ -953,12 +1088,27 @@ function Home() {
                                             <label className="text-sm font-semibold text-gray-700 mb-1.5 block">Special Instructions</label>
                                             <textarea value={checkout.notes} onChange={(e) => setCheckout((p) => ({ ...p, notes: e.target.value }))} className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-black focus:border-transparent transition-all outline-none resize-none" placeholder="e.g. Extra spicy sauce..." rows={2} />
                                         </div>
+
                                         <div className="border-t border-gray-100 pt-4 mt-2">
-                                            <div className="flex justify-between items-end mb-4"><span className="text-gray-600">Total Amount</span><span className="text-3xl font-bold tracking-tight">₱{fmtMoney(totalPrice)}</span></div>
+                                            <div className="flex justify-between items-end mb-4">
+                                                <span className="text-gray-600">Total Amount</span>
+                                                <span className="text-3xl font-bold tracking-tight">₱{fmtMoney(totalPrice)}</span>
+                                            </div>
+
+                                            <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-xl mt-3 mb-4">
+                                                <p className="text-sm font-semibold text-yellow-900">
+                                                    Estimated Cooking Time: {estimatedCookingTime} minutes
+                                                </p>
+                                                <p className="text-xs text-yellow-700 mt-1">
+                                                    Based on 4 kawali cooking capacity
+                                                </p>
+                                            </div>
+
                                             <button onClick={placeOrder} disabled={placing || cart.length === 0 || profile.is_blocked} className="w-full bg-black text-white py-3.5 rounded-full font-bold text-lg hover:bg-gray-800 hover:shadow-lg disabled:opacity-50 disabled:hover:shadow-none active:scale-[0.98] transition-all cursor-pointer">
                                                 {placing ? <span className="flex items-center justify-center gap-2"><i className="fa-solid fa-circle-notch animate-spin"></i> Processing...</span> : "Place Order"}
                                             </button>
                                         </div>
+
                                     </div>
                                 </div>
                             </div>
@@ -1082,14 +1232,12 @@ function Home() {
                             <div className="space-y-5">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                     <div>
-                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block">Full Name</label>
-                                        <input
-                                            type="text"
-                                            value={editProfile.full_name}
-                                            onChange={(e) => setEditProfile(p => ({ ...p, full_name: e.target.value }))}
-                                            className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-900 font-medium focus:ring-2 focus:ring-black focus:border-transparent transition-all outline-none"
-                                            placeholder="Enter your full name"
-                                        />
+                                        <label className="text-sm font-bold text-gray-700 mb-1.5 flex items-center gap-2">
+                                            Full Name <span className="text-[10px] font-normal bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Cannot be changed</span>
+                                        </label>
+                                        <div className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-500 font-medium cursor-not-allowed">
+                                            {profile.full_name || editProfile.full_name}
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="text-sm font-bold text-gray-700 mb-1.5 block">Phone Number</label>
@@ -1108,12 +1256,16 @@ function Home() {
                                         </div>
                                     </div>
                                     <div className="md:col-span-2">
-                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block flex items-center gap-2">
-                                            Email Address <span className="text-[10px] font-normal bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Cannot be changed</span>
+                                        <label className="text-sm font-bold text-gray-700 mb-1.5 block">
+                                            Email Address
                                         </label>
-                                        <div className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-500 font-medium cursor-not-allowed truncate">
-                                            {user.email}
-                                        </div>
+                                        <input
+                                            type="email"
+                                            value={editProfile.email}
+                                            onChange={(e) => setEditProfile(p => ({ ...p, email: e.target.value }))}
+                                            className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-900 font-medium focus:ring-2 focus:ring-black focus:border-transparent transition-all outline-none"
+                                            placeholder="Enter your email"
+                                        />
                                     </div>
                                     <div className="md:col-span-2">
                                         <label className="text-sm font-bold text-gray-700 mb-1.5 block">Account Status</label>
